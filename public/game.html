@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>🐧 Penguin World</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden;
+      background: #cfe6ff; /* warm winter sky surround */ }
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto,
+      sans-serif; color: #1a2740; display: flex; align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(circle at 50% 20%, #e7f3ff, #b9d8f5 70%, #a3c6e8); }
+
+    #stage { position: relative; }
+    canvas { display: block; border-radius: 22px; cursor: pointer;
+      box-shadow: 0 24px 70px rgba(40,70,120,.45),
+        0 0 0 6px rgba(255,255,255,.55); }
+
+    .hud { position: absolute; pointer-events: none; }
+    /* Solid rounded "pills" — high contrast, no glassmorphism */
+    .room { top: 18px; left: 22px; font-size: 1.05rem; font-weight: 800;
+      color: #fff; background: rgba(26,39,64,.55);
+      padding: .45rem .95rem; border-radius: 999px;
+      letter-spacing: .01em; }
+    .pop { top: 20px; right: 22px; font-size: .82rem; font-weight: 700;
+      color: rgba(255,255,255,0.6); background: rgba(26,39,64,.55);
+      padding: .45rem .9rem; border-radius: 999px; display: flex;
+      align-items: center; gap: .5rem; }
+    .pop .pop-cur { color: #fff; font-weight: 800; font-size: .88rem;
+      background: rgba(255,255,255,0.16); padding: .15rem .55rem;
+      border-radius: 999px; }
+    .chatbar { position: absolute; bottom: 18px; left: 50%;
+      transform: translateX(-50%); pointer-events: auto; }
+    .chatbar input { width: 340px; padding: .8rem 1.2rem;
+      border-radius: 999px; border: 0; color: #1a2740;
+      background: #fff; outline: none; font-size: .95rem; font-weight: 600;
+      box-shadow: 0 8px 24px rgba(40,70,120,.3); }
+    .chatbar input::placeholder { color: #93a3bd; font-weight: 500; }
+    .chatbar input:focus { box-shadow: 0 0 0 3px #ffd966,
+      0 8px 24px rgba(40,70,120,.3); }
+
+    /* contextual hint pill — JS-driven, single at a time */
+    #ctxHint { position: absolute; bottom: 72px; left: 50%;
+      transform: translateX(-50%); font-size: .76rem; font-weight: 600;
+      color: #5a3a1a; background: #fff7e6;
+      border: 1px solid rgba(0,0,0,0.15);
+      padding: .32rem .9rem; border-radius: 999px; white-space: nowrap;
+      pointer-events: none;
+      opacity: 0; transition: opacity .35s ease; }
+    #ctxHint.show { opacity: 1; }
+
+    /* solo notice — bottom-left */
+    #soloNotice { position: absolute; bottom: 18px; left: 18px;
+      font-size: .78rem; font-weight: 600; color: #5a3a1a;
+      background: #fff7e6; border: 1px solid rgba(0,0,0,0.15);
+      padding: .4rem .85rem; border-radius: 999px;
+      display: none; align-items: center; gap: .55rem;
+      pointer-events: auto; }
+    #soloNotice.show { display: flex; }
+    #copyInvite { font: inherit; font-size: .76rem; font-weight: 700;
+      color: #7a4a24; background: rgba(122,74,36,0.12); border: 0;
+      padding: .22rem .6rem; border-radius: 999px; cursor: pointer;
+      transition: background .15s; }
+    #copyInvite:hover { background: rgba(122,74,36,0.22); }
+
+    #intro { position: fixed; inset: 0; z-index: 10; display: flex;
+      flex-direction: column; align-items: center; justify-content: center;
+      background:
+        radial-gradient(circle at 50% 30%, #eaf4ff, #bcd9f5 65%, #9cc1e6);
+      text-align: center; padding: 2rem; }
+    #intro h1 { font-size: clamp(2.6rem, 7vw, 4.8rem); font-weight: 900;
+      color: #1a2740;
+      text-shadow: 0 3px 0 #fff, 0 6px 24px rgba(80,130,200,.4); }
+    #intro p { color: #46638c; margin: .8rem 0 1.7rem; max-width: 440px;
+      line-height: 1.6; font-weight: 500; }
+
+    /* intro penguin preview canvas */
+    #introPreview { width: 96px; height: 96px; margin: 0 auto .5rem;
+      border-radius: 50%; background: rgba(255,255,255,0.35); display: block; }
+
+    #intro input { padding: .95rem 1.2rem; border-radius: 14px; width: 270px;
+      border: 2px solid #fff; background: #fff; color: #1a2740;
+      text-align: center; font-size: 1.05rem; font-weight: 700;
+      box-shadow: 0 10px 30px rgba(80,130,200,.25);
+      transition: border-color .15s; }
+    #intro input::placeholder { color: #9fb3cf; font-weight: 500; }
+    #intro input:focus { outline: none; border-color: #ffd966;
+      box-shadow: 0 0 0 3px rgba(255,217,102,0.45),
+        0 10px 30px rgba(80,130,200,.25); }
+    #nameErr { min-height: 1.2rem; font-size: .8rem; font-weight: 600;
+      color: #c0584a; margin-top: .35rem; }
+    #intro button { margin-top: 1.1rem; padding: .95rem 2.4rem; border: 0;
+      border-radius: 14px;
+      background: linear-gradient(135deg,#ffb02e,#ff8a3d);
+      color: #4a2600; font-weight: 800; font-size: 1.1rem; cursor: pointer;
+      box-shadow: 0 10px 26px rgba(255,140,40,.45);
+      transition: transform .15s, box-shadow .15s; }
+    #intro button:hover { transform: scale(1.06);
+      box-shadow: 0 14px 34px rgba(255,140,40,.55); }
+    .tag { position: fixed; bottom: 12px; right: 16px; font-size: .7rem;
+      color: rgba(255,255,255,.6); }
+
+    /* shake animation for empty name submit */
+    @keyframes nameShake {
+      0%,100% { transform: translateX(0); }
+      20%      { transform: translateX(-8px); }
+      40%      { transform: translateX(8px); }
+      60%      { transform: translateX(-5px); }
+      80%      { transform: translateX(5px); }
+    }
+    #name.shake { animation: nameShake 0.3s ease; }
+
+    /* ---- cabinet game overlay ---- */
+    #cabOverlay { position: absolute; inset: 0; display: none;
+      align-items: center; justify-content: center;
+      background: rgba(8,12,24,.62); border-radius: 22px; z-index: 6; }
+    #cabOverlay.on { display: flex; }
+    .cabinet-frame { width: 92%; max-width: 920px; background: #141a2c;
+      border: 3px solid #2c3a5e; border-radius: 18px; overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+    .cab-head { display: flex; align-items: center; justify-content: space-between;
+      padding: .7rem 1.1rem; background: #1b2440; font-weight: 800;
+      color: #e6edf3; }
+    .cab-x { font-size: .8rem; font-weight: 700; color: #fff;
+      background: #2c3a5e; border: 0; padding: .4rem .9rem;
+      border-radius: 8px; cursor: pointer; }
+    .cab-x:hover { background: #3a4d78; }
+    .cab-body { display: flex; gap: 1rem; padding: 1rem; }
+    /* `hidden` must beat .cab-body's display:flex / #cabLobby's padding,
+       otherwise the wrong game panel (e.g. the draw canvas) stays
+       visible behind the active game. */
+    [hidden] { display: none !important; }
+    .draw-left { flex: 1; }
+    .draw-bar { display: flex; align-items: center; gap: .7rem;
+      margin-bottom: .5rem; font-weight: 700; }
+    #drawRole { color: #9ad0ff; }
+    .draw-bar .word { letter-spacing: .35em; font-size: 1.35rem;
+      font-weight: 900; color: #ffd43b;
+      text-shadow: 0 0 12px rgba(255,212,59,.55); }
+    .draw-bar .timer { margin-left: auto; color: #ffd43b; }
+    #drawC { width: 100%; background: #fff; border-radius: 10px;
+      cursor: crosshair; touch-action: none; }
+    .draw-tools { display: flex; gap: .5rem; margin-top: .5rem;
+      align-items: center; }
+    .dc { width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+      border: 3px solid #141a2c; }
+    .dc.on { border-color: #fff; transform: scale(1.12); }
+    .draw-tools .sep { width: 1px; height: 24px; background: #2c3a5e;
+      margin: 0 .15rem; }
+    .ds { width: 26px; height: 26px; border-radius: 7px; cursor: pointer;
+      background: #0f1424; border: 1px solid #2c3a5e; display: flex;
+      align-items: center; justify-content: center; }
+    .ds.on { border-color: #6db0ff; }
+    .ds i { display: block; border-radius: 50%; background: #e6edf3; }
+    .draw-tools button, .draw-right input { font: inherit; }
+    .draw-tools button { background: #2c3a5e; color: #e6edf3; border: 0;
+      padding: .35rem .7rem; border-radius: 8px; cursor: pointer;
+      font-size: .82rem; }
+    .draw-tools button:hover { background: #3a4d78; }
+    .draw-tools button.on { background: #6db0ff; color: #06203a; }
+    .draw-right { width: 230px; display: flex; flex-direction: column;
+      gap: .5rem; }
+    .scores { background: #0f1424; border-radius: 10px; padding: .6rem .8rem;
+      font-size: .86rem; }
+    .scores .row { display: flex; justify-content: space-between;
+      padding: .15rem 0; }
+    .scores .row.dr { color: #6db0ff; font-weight: 700; }
+    .glog { flex: 1; min-height: 120px; max-height: 200px; overflow-y: auto;
+      background: #0f1424; border-radius: 10px; padding: .6rem .8rem;
+      font-size: .84rem; display: flex; flex-direction: column; gap: .25rem; }
+    .glog .sys { color: #8b9bb4; font-style: italic; }
+    .draw-right input { padding: .55rem .8rem; border-radius: 8px;
+      border: 1px solid #2c3a5e; background: #0f1424; color: #e6edf3;
+      outline: none; }
+    /* Reaction Duel — a deliberately different look from Draw & Guess:
+       dark arcade cabinet vibe, one huge circular reflex pad. */
+    #duelUI { flex-direction: column; align-items: center; gap: 1rem;
+      padding: 1.4rem 1rem 1.6rem; }
+    #duelStage { width: 100%; max-width: 560px; min-height: 360px;
+      border-radius: 18px; position: relative; overflow: hidden;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 1.4rem;
+      background:
+        radial-gradient(circle at 50% 38%, #241036, #140a24 70%, #0b0717);
+      box-shadow: inset 0 0 60px rgba(0,0,0,.6); }
+    /* scanline texture so it reads as an arcade screen, not a doc */
+    #duelStage::before { content: ''; position: absolute; inset: 0;
+      background: repeating-linear-gradient(0deg,
+        rgba(255,255,255,.035) 0 1px, transparent 1px 3px);
+      pointer-events: none; }
+    #duelMsg { font-size: 1.15rem; font-weight: 800; letter-spacing: .04em;
+      color: #c9b8ff; text-transform: uppercase; z-index: 1;
+      text-shadow: 0 0 14px rgba(168,120,255,.5); }
+    /* the reflex pad: a big tappable disc */
+    #duelBtn { width: 190px; height: 190px; border-radius: 50%;
+      border: 6px solid rgba(255,255,255,.14); font-size: 1.5rem;
+      font-weight: 900; letter-spacing: .05em; color: #fff; cursor: pointer;
+      z-index: 1; transition: transform .07s, box-shadow .15s,
+        background .07s; background: radial-gradient(circle at 40% 35%,
+        #5b3aa6, #34215f); box-shadow: 0 0 0 10px rgba(123,92,255,.08),
+        0 14px 30px rgba(0,0,0,.45); }
+    #duelBtn:active { transform: scale(.95); }
+    /* armed: red, "hold…" tension */
+    #duelStage.arming #duelBtn { background: radial-gradient(circle at 40% 35%,
+      #ff6b6b, #b91c1c); box-shadow: 0 0 0 10px rgba(255,60,60,.18),
+      0 0 50px rgba(255,40,40,.4); animation: duelPulse 1.1s ease-in-out infinite; }
+    @keyframes duelPulse { 0%,100% { transform: scale(1); }
+      50% { transform: scale(1.04); } }
+    /* GO: explode green */
+    #duelStage.go { background:
+      radial-gradient(circle at 50% 40%, #1f7a3a, #0c3d1d 75%, #06210f); }
+    #duelStage.go #duelBtn { background: radial-gradient(circle at 40% 35%,
+      #6bff9e, #16a34a); color: #053314;
+      box-shadow: 0 0 0 14px rgba(80,255,140,.25), 0 0 70px rgba(40,255,120,.6);
+      animation: none; transform: scale(1.08); }
+    #duelStage.bad { background:
+      radial-gradient(circle at 50% 40%, #7a1f1f, #2a0c0c 75%); }
+    #duelTimer { font-size: 2.6rem; font-weight: 900; color: #ffe066;
+      z-index: 1; font-variant-numeric: tabular-nums; min-height: 1.2em;
+      text-shadow: 0 0 18px rgba(255,224,102,.55); }
+    #duelScores { width: 100%; max-width: 560px; }
+
+    /* lobby card inside the cabinet overlay */
+    #cabLobby { padding: 1.5rem 2rem; color: #e6edf3; text-align: center;
+      display: flex; flex-direction: column; align-items: center; gap: .85rem; }
+    #cabLobby h2 { font-size: 1.4rem; font-weight: 900; color: #fff; }
+    #cabLobby .rules { font-size: .88rem; color: #9ab0cc; max-width: 420px;
+      line-height: 1.55; }
+    #cabLobby .lobby-count { font-size: .9rem; color: #9ad0ff; font-weight: 700; }
+    #cabLobbyBtn { padding: .75rem 2rem; font-size: 1rem; font-weight: 800;
+      border: 0; border-radius: 12px;
+      background: linear-gradient(135deg,#3b82f6,#1d4ed8);
+      color: #fff; cursor: pointer;
+      box-shadow: 0 6px 18px rgba(59,130,246,.4);
+      transition: transform .15s, opacity .15s; }
+    #cabLobbyBtn:hover { transform: scale(1.04); }
+    #cabLobbyBtn.waiting { opacity: .55; cursor: default; }
+
+    /* ---- Book UI ---- */
+    #bookUI { gap: 0; padding: 0; min-height: 420px; }
+    .book-shelf { width: 180px; background: #1a1208; border-right: 2px solid #2c2010;
+      overflow-y: auto; padding: .5rem; display: flex; flex-direction: column; gap: .3rem; }
+    .book-spine { padding: .5rem .6rem; border-radius: 6px; cursor: pointer;
+      font-size: .82rem; font-weight: 700; color: #f0e8d8;
+      border: 2px solid transparent; transition: border-color .15s, opacity .15s; }
+    .book-spine:hover { border-color: rgba(255,255,255,0.3); }
+    .book-spine.active { border-color: #ffd43b; }
+    .book-main { flex: 1; display: flex; flex-direction: column; padding: .8rem 1rem;
+      gap: .6rem; overflow: hidden; }
+    .book-header { font-size: 1.1rem; font-weight: 900; color: #ffe8b0; }
+    .book-author { font-size: .82rem; color: #9a8a6a; }
+    .book-page { flex: 1; background: #f5f0e4; border-radius: 8px; padding: .9rem 1.1rem;
+      font-family: Georgia, 'Times New Roman', serif; font-size: .95rem;
+      color: #2a1a0a; line-height: 1.7; white-space: pre-wrap; overflow-y: auto;
+      min-height: 120px; max-height: 240px;
+      box-shadow: inset 0 1px 4px rgba(0,0,0,0.12); }
+    .book-nav { display: flex; align-items: center; gap: .6rem; font-size: .82rem; }
+    .book-nav button { font: inherit; font-size: .82rem; font-weight: 700;
+      background: #2c3a5e; color: #e6edf3; border: 0;
+      padding: .32rem .75rem; border-radius: 7px; cursor: pointer; }
+    .book-nav button:hover { background: #3a4d78; }
+    .book-nav button:disabled { opacity: .4; cursor: default; }
+    .book-pgnum { color: #9ab0cc; margin: 0 auto; }
+    .book-notes { background: #0f1424; border-radius: 8px; padding: .6rem .8rem;
+      font-size: .82rem; max-height: 120px; overflow-y: auto; }
+    .book-notes .note-row { padding: .18rem 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .book-notes .note-row:last-child { border: 0; }
+    .book-notes .note-who { color: #9ad0ff; font-weight: 700; margin-right: .35rem; }
+    .book-note-input { font: inherit; font-size: .82rem; padding: .42rem .7rem;
+      border-radius: 7px; border: 1px solid #2c3a5e; background: #0f1424;
+      color: #e6edf3; outline: none; width: 100%; }
+    .book-note-input::placeholder { color: #4a5a78; }
+
+    /* ---- Lab UI ---- */
+    #labUI { flex-direction: column; padding: 1rem; gap: .7rem; }
+    .lab-titlebar { display: flex; align-items: center;
+      justify-content: space-between; gap: 1rem; }
+    .lab-lang { font-size: .74rem; font-weight: 800; color: #ffe08a;
+      background: rgba(255,200,60,0.14); border: 1px solid rgba(255,200,60,0.4);
+      padding: .2rem .6rem; border-radius: 999px; white-space: nowrap; }
+    .lab-puzzle-title { font-size: 1.05rem; font-weight: 900; color: #6bffb0; }
+    .lab-puzzle-prompt { font-size: .88rem; color: #b0c8b0; line-height: 1.5; }
+    .lab-hint-btn { font: inherit; font-size: .78rem; font-weight: 700;
+      background: transparent; color: #f5c66b; border: 1px solid #5a4a22;
+      border-radius: 999px; padding: .25rem .8rem; cursor: pointer;
+      align-self: flex-start; transition: background .12s; }
+    .lab-hint-btn:hover { background: rgba(245,198,107,.12); }
+    .lab-hint { font-size: .82rem; color: #f0d79a; line-height: 1.5;
+      background: rgba(245,198,107,.08); border-left: 3px solid #f5c66b;
+      border-radius: 4px; padding: .45rem .7rem; }
+    .lab-sig { font-family: 'Courier New', monospace; font-size: .82rem; color: #7ad0ff;
+      background: #0a1810; padding: .4rem .7rem; border-radius: 6px;
+      white-space: pre; overflow-x: auto; }
+    #labCode { font-family: 'Courier New', monospace; font-size: .88rem;
+      background: #0a1a10; color: #c8f0c8; border: 1px solid #2a4a3a;
+      border-radius: 8px; padding: .6rem .8rem; width: 100%; min-height: 110px;
+      resize: vertical; outline: none; }
+    .lab-run-btn { font: inherit; font-weight: 800; font-size: .95rem;
+      background: linear-gradient(135deg, #16a34a, #065f2e); color: #d1fae5;
+      border: 0; border-radius: 10px; padding: .65rem 1.8rem; cursor: pointer;
+      box-shadow: 0 4px 14px rgba(22,163,74,.3); transition: transform .1s; align-self: flex-start; }
+    .lab-run-btn:hover { transform: scale(1.03); }
+    .lab-results { background: #0a1810; border-radius: 8px; padding: .6rem .8rem;
+      font-size: .82rem; font-family: 'Courier New', monospace; min-height: 36px; }
+    .lab-results .pass { color: #6bff9e; }
+    .lab-results .fail { color: #ff6b6b; }
+    .lab-bottom { display: flex; gap: 1rem; }
+    .lab-scores { flex: 1; background: #0f1424; border-radius: 8px;
+      padding: .6rem .8rem; font-size: .82rem; }
+    .lab-scores .row { display: flex; justify-content: space-between;
+      padding: .12rem 0; color: #9ad0ff; }
+    .lab-log { flex: 1; background: #0a1810; border-radius: 8px;
+      padding: .6rem .8rem; font-size: .82rem; color: #8fa89a;
+      max-height: 90px; overflow-y: auto; }
+    .lab-next-btn { font: inherit; font-weight: 700; font-size: .82rem;
+      background: #1b3a2e; color: #6bffb0; border: 1px solid #2a6a48;
+      border-radius: 8px; padding: .4rem 1rem; cursor: pointer; align-self: flex-end; }
+    .lab-next-btn:hover { background: #2a5040; }
+  </style>
+</head>
+<body>
+  <a href="/" style="position:fixed;top:10px;left:12px;z-index:9999;
+    font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.78rem;
+    color:#9aa6cc;text-decoration:none;background:rgba(7,10,20,.6);
+    border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:.3rem .6rem;
+    backdrop-filter:blur(6px)">← home</a>
+  <div id="stage">
+    <canvas id="c" width="1200" height="720"></canvas>
+    <div class="hud room" id="roomName">—</div>
+    <div class="hud pop" id="pop"></div>
+    <div id="ctxHint"></div>
+    <div id="soloNotice">
+      No one else is online — invite a friend!
+      <button id="copyInvite">Copy invite link</button>
+    </div>
+    <div class="chatbar">
+      <input id="chat" maxlength="120" autocomplete="off"
+        placeholder="Message… press Enter to send">
+    </div>
+
+    <!-- Cabinet game overlay (shown only while your penguin is at a cabinet) -->
+    <div id="cabOverlay">
+      <div class="cabinet-frame">
+        <div class="cab-head">
+          <span id="cabTitle">🎮 Game</span>
+          <button class="cab-x" id="cabLeave">← Leave game</button>
+        </div>
+
+        <!-- Lobby card (shown before game is active) -->
+        <div id="cabLobby" hidden>
+          <h2 id="lobbyTitle">Game</h2>
+          <p class="rules" id="lobbyRules"></p>
+          <p class="lobby-count" id="lobbyCount">Players: —</p>
+          <button id="cabLobbyBtn">▶ Ready</button>
+        </div>
+
+        <!-- Draw & Guess -->
+        <div id="drawUI" class="cab-body">
+          <div class="draw-left">
+            <div class="draw-bar">
+              <span id="drawRole">—</span>
+              <span id="drawWord" class="word"></span>
+              <span id="drawTimer" class="timer"></span>
+            </div>
+            <canvas id="drawC" width="560" height="360"></canvas>
+            <div class="draw-tools" id="drawTools" hidden>
+              <span class="dc on" data-c="#111111" style="background:#111"></span>
+              <span class="dc" data-c="#e23636" style="background:#e23636"></span>
+              <span class="dc" data-c="#2f9e44" style="background:#2f9e44"></span>
+              <span class="dc" data-c="#1971c2" style="background:#1971c2"></span>
+              <span class="dc" data-c="#f08c00" style="background:#f08c00"></span>
+              <span class="dc" data-c="#9c36b5" style="background:#9c36b5"></span>
+              <span class="sep"></span>
+              <span class="ds on" data-w="4"><i style="width:5px;height:5px"></i></span>
+              <span class="ds" data-w="12"><i style="width:11px;height:11px"></i></span>
+              <span class="ds" data-w="26"><i style="width:18px;height:18px"></i></span>
+              <button id="drawErase" class="tbtn">🩹 Eraser</button>
+              <button id="drawFill" class="tbtn">🪣 Fill</button>
+              <button id="drawUndo" class="tbtn">↶ Undo</button>
+              <button id="drawClear" class="tbtn">🗑 Clear</button>
+            </div>
+          </div>
+          <div class="draw-right">
+            <div class="scores" id="drawScores"></div>
+            <div class="glog" id="drawLog"></div>
+            <input id="drawGuess" placeholder="type your guess…"
+              autocomplete="off">
+          </div>
+        </div>
+
+        <!-- Reaction Duel -->
+        <div id="duelUI" class="cab-body" hidden>
+          <div id="duelStage">
+            <div id="duelMsg">Waiting for players…</div>
+            <div id="duelTimer"></div>
+            <button id="duelBtn">WAIT</button>
+          </div>
+          <div class="scores" id="duelScores"></div>
+        </div>
+
+        <!-- Book Room -->
+        <div id="bookUI" class="cab-body" hidden>
+          <div class="book-shelf" id="bookShelf"></div>
+          <div class="book-main">
+            <div id="bookHeader" class="book-header">Select a book…</div>
+            <div id="bookAuthor" class="book-author"></div>
+            <div id="bookPageText" class="book-page"></div>
+            <div class="book-nav">
+              <button id="bookPrev">◀ Prev</button>
+              <span id="bookPageNum" class="book-pgnum"></span>
+              <button id="bookNext">Next ▶</button>
+            </div>
+            <div id="bookNotes" class="book-notes"></div>
+            <input id="bookNoteInput" class="book-note-input"
+              placeholder="Leave a margin note… (Enter to submit)" maxlength="140">
+          </div>
+        </div>
+
+        <!-- Lab / Class Console -->
+        <div id="labUI" class="cab-body" hidden>
+          <div class="lab-titlebar">
+            <span class="lab-puzzle-title" id="labPuzzleTitle">—</span>
+            <span class="lab-lang">🐍 Python</span>
+          </div>
+          <div class="lab-puzzle-prompt" id="labPuzzlePrompt"></div>
+          <button class="lab-hint-btn" id="labHintBtn">💡 Show hint</button>
+          <div class="lab-hint" id="labHint" hidden></div>
+          <div class="lab-sig" id="labPuzzleSig"></div>
+          <textarea id="labCode" rows="6" spellcheck="false"
+            placeholder="Write Python here. Tab indents 4 spaces."></textarea>
+          <button class="lab-run-btn" id="labRunBtn">▶ Run / Submit</button>
+          <div class="lab-results" id="labResults"></div>
+          <div class="lab-bottom">
+            <div class="lab-scores" id="labScores"></div>
+            <div class="lab-log" id="labLog"></div>
+          </div>
+          <button class="lab-next-btn" id="labNextBtn">Next puzzle ▶</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="intro">
+    <h1>🐧 Penguin World</h1>
+    <p>A tiny shared world. Pick a name, waddle around, bump into other
+       people, hop between rooms, and chat — all live.</p>
+    <p style="font-size:.82rem;color:#6b7894">Running on a web server,
+       WebSocket transport, and game loop built from scratch on Node's
+       raw <code>net</code> module.</p>
+    <canvas id="introPreview" width="96" height="96"></canvas>
+    <input id="name" maxlength="14" placeholder="Choose a penguin name"
+      autocomplete="off">
+    <div id="nameErr"></div>
+    <button id="go">Enter the world →</button>
+  </div>
+  <div class="tag">hand-rolled net HTTP/WebSocket framework</div>
+
+  <script src="/penguin.js"></script>
+  <script src="/books.js"></script>
+  <script src="/game.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

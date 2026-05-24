@@ -1,0 +1,276 @@
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const { getMimeType } = require('./mime');
+
+const STATUS_TEXT = {
+  200: 'OK',
+  201: 'Created',
+  202: 'Accepted',
+  204: 'No Content',
+  301: 'Moved Permanently',
+  302: 'Found',
+  304: 'Not Modified',
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not Found',
+  405: 'Method Not Allowed',
+  409: 'Conflict',
+  413: 'Payload Too Large',
+  415: 'Unsupported Media Type',
+  422: 'Unprocessable Entity',
+  500: 'Internal Server Error',
+  501: 'Not Implemented',
+  503: 'Service Unavailable',
+};
+
+// Per RFC 7230/7231 these never carry a message body.
+const BODYLESS_STATUS = new Set([204, 304]);
+
+class Response {
+  constructor(socket, method = 'GET') {
+    this.socket = socket;
+    // HEAD must return identical headers to GET but no body.
+    this.method = String(method).toUpperCase();
+    this.statusCode = 200;
+    this.headers = {};
+    this.sent = false;
+    // When a handler takes over the raw socket for a long-lived stream
+    // (SSE), it sets hijacked = true. The net-server then leaves the
+    // socket completely alone — no timeout re-arm, no drain continuation.
+    this.hijacked = false;
+    // HTTP/1.1 keep-alive: when true the socket is left open after this
+    // response so the connection can serve the next pipelined request. The
+    // net-server sets this from the request's version + Connection header.
+    this.keepAlive = false;
+    this._bytesWritten = 0; // body bytes, for the Flight Recorder
+    // Resolves the moment a response is flushed. dispatch() awaits this so a
+    // middleware that responds without calling next() (e.g. static file
+    // serving) still settles the request cleanly.
+    this.done = new Promise((resolve) => {
+      this._resolveDone = resolve;
+    });
+  }
+
+  _markSent() {
+    this.sent = true;
+    if (this._resolveDone) this._resolveDone();
+  }
+
+  // True when the response must omit its body (HEAD request, or a status
+  // that is defined to never have one). Content-Length headers are still
+  // sent so HEAD mirrors the equivalent GET.
+  _bodySuppressed() {
+    return this.method === 'HEAD' || BODYLESS_STATUS.has(this.statusCode);
+  }
+
+  status(code) {
+    // Coerce and bound-check: a non-numeric status (e.g. user input) would
+    // otherwise be written verbatim into the status line and could inject
+    // headers / split the response.
+    const n = Number(code);
+    if (!Number.isInteger(n) || n < 100 || n > 599) {
+      throw new Error(`Invalid HTTP status code: ${code}`);
+    }
+    this.statusCode = n;
+    return this;
+  }
+
+  // Canonicalize a header name so set('content-length') and the auto
+  // 'Content-Length' don't both get emitted (duplicate-header bug).
+  _canonical(name) {
+    const lower = String(name).toLowerCase();
+    for (const existing of Object.keys(this.headers)) {
+      if (existing.toLowerCase() === lower) return existing;
+    }
+    return name;
+  }
+
+  set(key, value) {
+    // Reject CR/LF in header name or value — otherwise a caller passing
+    // attacker-controlled data could inject extra headers or split the
+    // response (CRLF / response-splitting).
+    if (/[\r\n]/.test(String(key)) || /[\r\n]/.test(String(value))) {
+      throw new Error('Invalid characters (CR/LF) in header');
+    }
+    this.headers[this._canonical(key)] = value;
+    return this;
+  }
+
+  type(contentType) {
+    // Route through set() so untrusted content types can't smuggle a
+    // CR/LF and split the response. set() throws on bad input.
+    return this.set('Content-Type', contentType);
+  }
+
+  // Case-insensitive "is this header already set by the caller?"
+  _has(name) {
+    const lower = name.toLowerCase();
+    return Object.keys(this.headers).some((k) => k.toLowerCase() === lower);
+  }
+
+  _writeHead(bodyLength) {
+    const text = STATUS_TEXT[this.statusCode] || 'Unknown';
+    let head = `HTTP/1.1 ${this.statusCode} ${text}\r\n`;
+
+    // Only add managed defaults if the caller hasn't already set them
+    // (under any casing) — avoids emitting duplicate Content-Length etc.
+    if (bodyLength !== null && !this._has('Content-Length')) {
+      this.headers['Content-Length'] = bodyLength;
+    }
+    if (!this._has('Connection')) {
+      // Keep-alive only when the connection is being reused AND the body is
+      // self-delimiting (we always send Content-Length, never chunked, so a
+      // peer can find the message boundary). Otherwise close so the body
+      // length is unambiguous.
+      this.headers['Connection'] =
+        this.keepAlive && bodyLength !== null ? 'keep-alive' : 'close';
+    }
+    if (!this._has('Date')) {
+      this.headers['Date'] = new Date().toUTCString();
+    }
+    if (!this._has('Server')) {
+      this.headers['Server'] = 'Forge/1.0';
+    }
+
+    for (const [k, v] of Object.entries(this.headers)) {
+      // Final safety net: never emit a header containing CR/LF.
+      if (/[\r\n]/.test(String(k)) || /[\r\n]/.test(String(v))) continue;
+      head += `${k}: ${v}\r\n`;
+    }
+    head += '\r\n';
+    return head;
+  }
+
+  // End the response. On a keep-alive connection the socket is left open so
+  // the next pipelined request can be served; otherwise it is closed.
+  _finish() {
+    const reuse =
+      this.keepAlive &&
+      String(this.headers['Connection']).toLowerCase() === 'keep-alive';
+    if (!reuse) this.socket.end();
+  }
+
+  // Send a Buffer or string body and close the connection.
+  send(body) {
+    if (this.sent) return this;
+
+    // Delegate objects to json() BEFORE marking sent — otherwise json()
+    // would see sent===true, bail, and the connection would hang forever.
+    if (
+      body !== null &&
+      body !== undefined &&
+      typeof body === 'object' &&
+      !Buffer.isBuffer(body)
+    ) {
+      return this.json(body);
+    }
+
+    this._markSent();
+
+    let bodyBuf;
+    if (Buffer.isBuffer(body)) {
+      bodyBuf = body;
+      if (this.headers['Content-Type'] === undefined) {
+        this.headers['Content-Type'] = 'application/octet-stream';
+      }
+    } else if (body === undefined || body === null) {
+      bodyBuf = Buffer.alloc(0);
+    } else {
+      bodyBuf = Buffer.from(String(body), 'utf8');
+      if (this.headers['Content-Type'] === undefined) {
+        this.headers['Content-Type'] = 'text/plain; charset=utf-8';
+      }
+    }
+
+    // HEAD mirrors GET's headers (incl. Content-Length) but sends no body.
+    // 204/304 carry neither a body nor a Content-Length.
+    const bodyless = BODYLESS_STATUS.has(this.statusCode);
+    const head = this._writeHead(bodyless ? null : bodyBuf.length);
+    this.socket.write(head);
+    if (!this._bodySuppressed() && bodyBuf.length) {
+      this.socket.write(bodyBuf);
+      this._bytesWritten = bodyBuf.length;
+    }
+    this._finish();
+    return this;
+  }
+
+  json(data) {
+    if (this.sent) return this;
+    const body = Buffer.from(JSON.stringify(data, null, 2), 'utf8');
+    this.headers['Content-Type'] = 'application/json; charset=utf-8';
+    this._markSent();
+    const bodyless = BODYLESS_STATUS.has(this.statusCode);
+    const head = this._writeHead(bodyless ? null : body.length);
+    this.socket.write(head);
+    if (!this._bodySuppressed()) {
+      this.socket.write(body);
+      this._bytesWritten = body.length;
+    }
+    this._finish();
+    return this;
+  }
+
+  redirect(location, code = 302) {
+    if (this.sent) return this;
+    this.status(code); // bounds-checks the code (100–599) like every other path
+    this.set('Location', location); // CR/LF-guarded
+    return this.send('');
+  }
+
+  // Stream a file with correct MIME + Content-Length. Calls onError(err)
+  // instead of throwing so callers can fall back (e.g. to a 404).
+  sendFile(filePath, onError) {
+    if (this.sent) return this;
+    // Claim the response synchronously so dispatch() / the request loop
+    // can't race us and emit a 404 fallback while the async fs.stat runs.
+    // If stat fails, we either delegate to onError (which can write its
+    // own response) or we send a real 404 ourselves on this socket.
+    this.sent = true;
+    const finishOnError = (err) => {
+      // We claimed `sent`, but no bytes flew yet — clear the flag so the
+      // 404 we (or onError) write actually goes out.
+      this.sent = false;
+      if (onError) return onError(err || new Error('Not a file'));
+      return this.status(404).send('Not Found');
+    };
+    fs.stat(filePath, (err, stats) => {
+      if (err || !stats.isFile()) return finishOnError(err);
+      this._markSent();
+      // Streamed file bodies close the connection: piping a fs stream into
+      // the socket with keep-alive needs end:false plus a completion signal
+      // back to the request loop — out of scope. Content-Length is still set
+      // so the response is well-framed.
+      this.keepAlive = false;
+      if (this.headers['Content-Type'] === undefined) {
+        this.headers['Content-Type'] = getMimeType(filePath);
+      }
+      const head = this._writeHead(stats.size);
+      this.socket.write(head);
+      this._bytesWritten = stats.size;
+      // HEAD: same headers (incl. Content-Length) as GET, but no body.
+      if (this.method === 'HEAD') {
+        this.socket.end();
+        return;
+      }
+      const stream = fs.createReadStream(filePath);
+      const cleanup = () => stream.destroy();
+      // If the client disconnects mid-transfer, tear the read stream down
+      // so the file descriptor isn't leaked.
+      this.socket.once('close', cleanup);
+      this.socket.once('error', cleanup);
+      stream.on('error', () => this.socket.destroy());
+      stream.on('end', () => {
+        this.socket.removeListener('close', cleanup);
+        this.socket.removeListener('error', cleanup);
+      });
+      stream.pipe(this.socket);
+    });
+    return this;
+  }
+}
+
+module.exports = { Response, STATUS_TEXT };

@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>fs-forge — the routes/ tree is the API</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      color-scheme:dark;
+      --bg:#070a14;
+      --ink:#eaf0ff;
+      --ink-dim:#9aa6cc;
+      --ink-faint:#6b769c;
+      --line:rgba(255,255,255,.10);
+      --line-soft:rgba(255,255,255,.06);
+      --glass:rgba(255,255,255,.05);
+      --violet:#a78bff;
+      --teal:#5fe3c8;
+      --pink:#ff6fae;
+      --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+      --sans:"Manrope",system-ui,sans-serif;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth}
+    body{
+      font-family:var(--sans);color:var(--ink);background:var(--bg);
+      min-height:100vh;line-height:1.6;-webkit-font-smoothing:antialiased;
+      position:relative;overflow-x:hidden;
+    }
+    /* the aurora — restrained, behind everything, sharp text stays on top */
+    body::before{
+      content:"";position:fixed;inset:-30%;z-index:0;pointer-events:none;
+      background:
+        radial-gradient(38% 38% at 18% 16%, rgba(120,90,255,.34), transparent 70%),
+        radial-gradient(36% 36% at 82% 26%, rgba(0,210,185,.24), transparent 70%),
+        radial-gradient(46% 46% at 60% 96%, rgba(255,90,170,.20), transparent 70%);
+      filter:blur(46px);animation:drift 26s ease-in-out infinite alternate;
+    }
+    @keyframes drift{
+      0%{transform:translate3d(0,0,0) scale(1)}
+      100%{transform:translate3d(-2%,2%,0) scale(1.06)}
+    }
+    @media(prefers-reduced-motion:reduce){body::before{animation:none}}
+    .wrap{position:relative;z-index:1;max-width:1200px;margin:0 auto;
+      padding:1.8rem 1.4rem 3rem}
+
+    /* Centered hero block (title + lede + meta strip). The lede is
+       width-constrained so it stays readable on wide screens; .meta
+       wraps horizontally and centers via .hero text-align. */
+    .hero{text-align:center}
+    .hero .lede{margin:0 auto;max-width:72ch}
+    .hero .meta{justify-content:center}
+
+    .badge{display:inline-flex;align-items:center;gap:.45rem;font-family:var(--mono);
+      font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;
+      color:var(--ink-dim);border:1px solid var(--line);
+      background:var(--glass);padding:.35rem .8rem;border-radius:999px;
+      backdrop-filter:blur(8px)}
+    .badge .d{width:6px;height:6px;border-radius:50%;background:var(--teal);
+      box-shadow:0 0 10px var(--teal)}
+    h1{font-size:clamp(2.2rem,5vw,3.4rem);font-weight:800;letter-spacing:-.045em;
+      line-height:1;margin:.7rem 0 .4rem;
+      background:linear-gradient(118deg,#cbd6ff 0%,#a78bff 42%,#5fe3c8 100%);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .lede{color:var(--ink-dim);font-size:1rem;max-width:75ch;line-height:1.5}
+    .lede b{color:var(--ink);font-weight:600}
+    .lede .hl{color:var(--violet);font-weight:600}
+    code{font-family:var(--mono);font-size:.86em;color:#d9c8ff;
+      background:rgba(167,139,255,.12);padding:.08rem .4rem;border-radius:4px}
+
+    .meta{display:flex;align-items:center;gap:.75rem;margin-top:.9rem;
+      color:var(--ink-faint);font-family:var(--mono);font-size:.7rem;
+      letter-spacing:.14em;text-transform:uppercase;flex-wrap:wrap}
+    .meta .sep{width:5px;height:5px;border-radius:50%;background:var(--line);
+      flex:none}
+
+    /* Two diagram panels, centered. Each panel hugs its content (no
+       dead horizontal space) — `auto auto` columns size to content,
+       `justify-content: center` centers the pair within the page. */
+    .grid{display:grid;grid-template-columns:auto auto;gap:1rem;
+      margin-top:1.2rem;justify-content:center}
+    @media(max-width:720px){.grid{grid-template-columns:1fr}}
+    .glass{background:var(--glass);border:1px solid var(--line);
+      border-radius:14px;padding:1rem 1.1rem;backdrop-filter:blur(14px);
+      position:relative;overflow:hidden;max-width:max-content}
+    .glass::after{content:"";position:absolute;inset:0 0 auto 0;height:1px;
+      background:linear-gradient(90deg,transparent,rgba(255,255,255,.25),transparent)}
+    .glass h2{font-size:.7rem;font-family:var(--mono);letter-spacing:.16em;
+      text-transform:uppercase;color:var(--ink-faint);margin-bottom:.55rem;
+      font-weight:600}
+    .tree{font-family:var(--mono);font-size:.84rem;line-height:1.55;
+      color:var(--ink)}
+    .tree .b{color:var(--ink-faint)}
+    .tree .f{color:var(--violet)}
+    .tree .ar{color:var(--teal)}
+    .tree .leaf{color:var(--teal);font-weight:700}
+    pre.code{font-family:var(--mono);font-size:.82rem;line-height:1.5;
+      overflow:auto;color:var(--ink)}
+    .kw{color:var(--violet)} .fn{color:var(--teal)} .str{color:#ffd28a}
+    .cm{color:var(--ink-faint);font-style:italic}
+
+    .wirefmt{margin:.8rem auto 0;border:1px solid var(--line-soft);
+      border-radius:10px;padding:.55rem .85rem;background:rgba(255,255,255,.025);
+      font-family:var(--mono);font-size:.72rem;color:var(--ink-faint);
+      display:inline-flex;gap:.4rem;flex-wrap:wrap;align-items:center;
+      width:max-content;max-width:100%}
+    /* Center the wire-format strip on the page (inline-flex + auto
+       margins doesn't center on its own — wrap it via text-align). */
+    .wirefmt-row{text-align:center}
+    .wirefmt .seg{border:1px solid rgba(167,139,255,.4);color:var(--violet);
+      padding:.15rem .5rem;border-radius:5px}
+    .wirefmt .seg.b{border-color:rgba(95,227,200,.45);color:var(--teal)}
+
+    .panel{margin-top:1rem;background:var(--glass);border:1px solid var(--line);
+      border-radius:14px;backdrop-filter:blur(16px);overflow:hidden}
+    .panel-h{display:flex;align-items:center;gap:.6rem;padding:.65rem 1.1rem;
+      border-bottom:1px solid var(--line-soft);font-family:var(--mono);
+      font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;
+      color:var(--ink-faint)}
+    .led{width:9px;height:9px;border-radius:50%;background:var(--teal);
+      box-shadow:0 0 0 0 rgba(95,227,200,.55);animation:ping 2.4s infinite}
+    @keyframes ping{70%{box-shadow:0 0 0 9px rgba(95,227,200,0)}100%{box-shadow:0 0 0 0 rgba(95,227,200,0)}}
+    .panel-b{padding:.85rem}
+    /* Two-column console: routes+controls on the left, response on the
+       right. Stacks to one column on narrow screens. */
+    .console-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;
+      align-items:start}
+    /* Grid tracks default to min-width:auto, so a wide route row or a long
+       response line would stretch the left column and shove the chat panel
+       sideways. min-width:0 lets the 1fr columns actually shrink. */
+    .console-grid > *{min-width:0}
+    @media(max-width:880px){.console-grid{grid-template-columns:1fr}}
+    .console-grid .out{display:flex;flex-direction:column;height:100%}
+    .console-grid .out pre#resp{flex:1;min-height:11rem}
+    .routes{border:1px solid var(--line-soft);border-radius:10px;overflow:hidden}
+    .route{display:flex;align-items:center;gap:.6rem;padding:.38rem .7rem;
+      border-bottom:1px solid var(--line-soft);font-family:var(--mono);
+      font-size:.82rem}
+    .route:last-child{border-bottom:none}
+    .route:hover{background:rgba(167,139,255,.07)}
+    .m{font-size:.62rem;font-weight:700;padding:.16rem .45rem;letter-spacing:.06em;
+      border:1px solid currentColor;border-radius:5px}
+    .m.GET{color:var(--teal)} .m.POST{color:var(--violet)}
+    .m.DELETE{color:var(--pink)} .m.PUT,.m.PATCH{color:#ffce73}
+    .route a{color:var(--ink);text-decoration:none;flex:1;min-width:0;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .route a:hover{color:var(--violet)}
+    .bar{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem}
+    select,input,button{font:inherit;font-size:.85rem;border-radius:8px;
+      border:1px solid var(--line);background:rgba(255,255,255,.04);
+      color:var(--ink);padding:.5rem .75rem;font-family:var(--mono)}
+    select:focus,input:focus{outline:none;border-color:var(--violet);
+      box-shadow:0 0 0 3px rgba(167,139,255,.2)}
+    input{flex:1;min-width:140px}
+    button{font-family:var(--sans);background:linear-gradient(120deg,#a78bff,#5fe3c8);
+      color:#0a0a16;font-weight:800;border:none;cursor:pointer;
+      padding:.5rem 1.3rem;letter-spacing:.01em;
+      box-shadow:0 8px 24px -10px rgba(120,140,255,.7)}
+    button:hover{filter:brightness(1.08)}
+    .status{font-family:var(--mono);font-size:.76rem;color:var(--ink-faint);
+      margin:.4rem 0 .3rem}
+    .status b.ok{color:var(--teal)} .status b.err{color:var(--pink)}
+    pre#resp{font-family:var(--mono);font-size:.82rem;line-height:1.5;
+      border:1px solid var(--line-soft);border-radius:10px;
+      background:rgba(0,0,0,.32);padding:.7rem .85rem;overflow:auto;color:var(--ink);
+      min-height:3rem}
+
+    /* Live chat: a watcher on the penguin world's /world WebSocket, shown
+       beside the console. Sees every chat line live and can post into it. */
+    .wall{display:flex;flex-direction:column;height:100%;min-height:18rem}
+    .wall-h{display:flex;align-items:center;gap:.5rem;font-family:var(--mono);
+      font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
+      color:var(--ink-faint);margin-bottom:.55rem}
+    .wall-h .live{width:7px;height:7px;border-radius:50%;background:var(--teal);
+      box-shadow:0 0 0 0 rgba(95,227,200,.55);animation:ping 2.4s infinite}
+    .composer{display:flex;gap:.4rem;margin-bottom:.6rem}
+    .composer input{flex:1;min-width:0;font:inherit;font-family:var(--mono);
+      font-size:.82rem;background:rgba(255,255,255,.04);color:var(--ink);
+      border:1px solid var(--line);border-radius:7px;padding:.45rem .65rem}
+    .composer input#chatWho{flex:0 0 7.5rem}
+    .composer input:focus{outline:none;border-color:var(--violet);
+      box-shadow:0 0 0 3px rgba(167,139,255,.2)}
+    .composer button{font:inherit;font-family:var(--sans);font-weight:800;
+      font-size:.82rem;color:#0a0a16;border:none;border-radius:7px;
+      padding:.45rem .9rem;cursor:pointer;
+      background:linear-gradient(120deg,#a78bff,#5fe3c8);
+      box-shadow:0 8px 20px -10px rgba(120,140,255,.7)}
+    .composer button:hover{filter:brightness(1.08)}
+    .feed{flex:1;overflow:auto;display:flex;flex-direction:column;gap:.45rem;
+      padding-right:.2rem;max-height:18rem}
+    .note{border:1px solid var(--line-soft);border-radius:9px;padding:.55rem .8rem;
+      background:rgba(255,255,255,.04);animation:noteIn .35s ease both}
+    @keyframes noteIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+    .note .who{font-size:.7rem;color:var(--violet);font-weight:700;
+      letter-spacing:.04em;text-transform:uppercase}
+    .note .what{font-size:.92rem;color:var(--ink);line-height:1.4;
+      margin-top:.15rem;word-wrap:break-word}
+    .note.fresh{border-color:rgba(95,227,200,.5);
+      box-shadow:0 0 0 2px rgba(95,227,200,.15)}
+    .feed-empty{color:var(--ink-faint);font-size:.82rem;text-align:center;
+      padding:1.2rem;font-style:italic}
+    .post-err{border:1px solid rgba(255,111,174,.5);
+      background:rgba(255,111,174,.08);color:#ffb3c8;font-size:.78rem;
+      line-height:1.45;border-radius:8px;padding:.5rem .7rem;margin-bottom:.55rem}
+    .post-err code{font-family:var(--mono);color:#ffd6e2;
+      background:rgba(255,111,174,.18);padding:.06rem .3rem;border-radius:3px}
+
+    .scope{margin-top:.75rem;border:1px solid var(--line);border-radius:12px;
+      background:linear-gradient(120deg,rgba(167,139,255,.12),rgba(95,227,200,.06));
+      padding:.7rem .95rem;display:flex;gap:.8rem;align-items:center;
+      flex-wrap:wrap;backdrop-filter:blur(14px)}
+    .scope .glyph{font-size:1.35rem}
+    .scope .t{flex:1;min-width:220px}
+    .scope .t .h{font-size:1rem;font-weight:800;color:var(--ink)}
+    .scope .t .s{font-size:.8rem;color:var(--ink-dim);margin-top:.1rem;line-height:1.45}
+    .scope a.go{font-family:var(--mono);font-size:.72rem;font-weight:700;
+      letter-spacing:.08em;text-transform:uppercase;color:#0a0a16;
+      background:linear-gradient(120deg,#a78bff,#5fe3c8);
+      padding:.45rem .9rem;text-decoration:none;border-radius:999px;
+      box-shadow:0 8px 22px -10px rgba(120,140,255,.7)}
+    .scope a.go:hover{filter:brightness(1.08)}
+
+    footer{margin-top:1.2rem;border-top:1px solid var(--line-soft);
+      padding-top:.7rem;color:var(--ink-faint);font-size:.75rem;
+      line-height:1.55}
+    footer a{color:var(--teal);text-decoration:none}
+    footer a:hover{color:var(--violet)}
+    footer code{font-size:.92em}
+
+    [data-r]{opacity:0;transform:translateY(12px);
+      animation:rise .75s cubic-bezier(.2,.7,.2,1) forwards}
+    [data-r="1"]{animation-delay:.04s}[data-r="2"]{animation-delay:.16s}
+    [data-r="3"]{animation-delay:.27s}[data-r="4"]{animation-delay:.38s}
+    [data-r="5"]{animation-delay:.49s}[data-r="6"]{animation-delay:.6s}
+    @keyframes rise{to{opacity:1;transform:none}}
+    @media(prefers-reduced-motion:reduce){[data-r]{animation:none;opacity:1;transform:none}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <div class="hero" data-r="1">
+      <span class="badge"><span class="d"></span>PS#1 · Creative HTTP Server · built on node:net</span>
+      <h1>fs-forge</h1>
+      <p class="lede">An HTTP/1.1 framework built from scratch on Node's
+        <code>net</code> module — no <code>http</code>, no Express.
+        <b>The <span class="hl">routes/</span> directory <em>is</em> the
+        API</b>: no registration, ever. This page is itself a route
+        (<code>routes/index.js</code> → <code>html()</code>); its assets are
+        served by the static handler.</p>
+      <div class="meta">
+        <span>Zero-config routing</span><span class="sep"></span>
+        <span>Tagged-template DSL</span><span class="sep"></span>
+        <span>Live hot reload</span><span class="sep"></span>
+        <span>Wire inspector</span>
+      </div>
+    </div>
+
+    <div class="grid">
+      <section class="glass" data-r="2">
+        <h2>The filesystem is the router</h2>
+        <div class="tree">
+routes/<br>
+<span class="b">├─</span> index.js<span class="b"> ······· </span><span class="ar">→</span> /<br>
+<span class="b">├─</span> play.js<span class="b"> ········ </span><span class="ar">→</span> /play<br>
+<span class="b">├─</span> world.js<span class="b"> ······· </span><span class="ar">→</span> /world <span class="leaf">(ws)</span><br>
+<span class="b">└─</span> api/penguins/<br>
+<span class="b">&nbsp;&nbsp;&nbsp;├─</span> index.js<span class="b"> · </span><span class="ar">→</span> /api/penguins<br>
+<span class="b">&nbsp;&nbsp;&nbsp;└─</span> <span class="f">[id].js</span><span class="b"> ·· </span><span class="ar">→</span> /api/penguins/<span class="leaf">:id</span>
+        </div>
+      </section>
+      <section class="glass" data-r="3">
+        <h2>A route file reads like HTTP</h2>
+<pre class="code"><span class="cm">// routes/api/penguins/[id].js</span>
+<span class="kw">module</span>.exports = <span class="fn">http</span>`
+  <span class="kw">PUT</span>    $&#123;<span class="cm">({params}) =&gt;</span>
+           <span class="fn">json</span>(rename(params.id))}
+  <span class="kw">DELETE</span> $&#123;<span class="cm">() =&gt;</span> <span class="fn">noContent</span>()}
+`;</pre>
+      </section>
+    </div>
+
+    <div class="wirefmt-row" data-r="4">
+      <div class="wirefmt">
+        <span>WIRE FORMAT ▸</span>
+        <span class="seg">request-line</span><span>+</span>
+        <span class="seg">headers</span><span>+</span>
+        <span class="seg">CRLF·CRLF</span><span>+</span>
+        <span class="seg b">body</span>
+        <span>— parsed by hand from raw TCP chunks</span>
+      </div>
+    </div>
+
+    <section class="panel" data-r="5">
+      <div class="panel-h"><span class="led"></span><span>Live route table &amp; API console</span></div>
+      <div class="panel-b">
+        <div class="console-grid">
+          <div>
+            <div class="routes" id="routes"></div>
+            <div class="bar">
+              <select id="method">
+                <option>GET</option><option>POST</option>
+                <option>DELETE</option><option>PUT</option>
+              </select>
+              <input id="path" value="/api/penguins" />
+              <button id="go">Send ▸</button>
+            </div>
+            <div class="bar" id="bodyBar" style="display:none">
+              <input id="bodyName" placeholder="penguin name (POST/PUT) — e.g. Pingu" />
+            </div>
+            <div class="status" id="status">Select a route above, or type a path — then Send.</div>
+            <pre id="resp">// response appears here
+//
+// Try (penguins must be live — join at /play, or POST one here):
+//   GET    /api/penguins        the live roster
+//   POST   /api/penguins        ?name=Pingu   → spawn a penguin
+//   PUT    /api/penguins/1      ?name=Skipper → rename it
+//   DELETE /api/penguins/1      kick it (it gets a "kicked" notice)</pre>
+          </div>
+          <div class="wall">
+            <div class="wall-h"><span class="live"></span>💬 Live chat — the penguin world</div>
+            <form class="composer" id="chatForm" onsubmit="return false">
+              <input id="chatWho" placeholder="your name" maxlength="24" />
+              <input id="chatWhat" placeholder="say something… (Enter to send)" maxlength="120" />
+              <button id="chatGo">Send</button>
+            </form>
+            <div id="chatErr" class="post-err" style="display:none"></div>
+            <div class="feed" id="chatFeed"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="scope" data-r="6">
+      <span class="glyph">📊</span>
+      <div class="t">
+        <div class="h">Data Explorer</div>
+        <div class="s">A framework-generated admin UI: rows from the live
+          JSON store with inline GET/PUT/DELETE buttons, discovered from
+          <code style="font-family:var(--mono);color:#d9c8ff">GET[list]</code>
+          /
+          <code style="font-family:var(--mono);color:#d9c8ff">POST[create]</code>
+          DSL hints.</div>
+      </div>
+      <a class="go" href="/_data" target="_blank">Open /_data ▸</a>
+    </section>
+
+    <section class="scope" data-r="6">
+      <span class="glyph">🔬</span>
+      <div class="t">
+        <div class="h">Wire Inspector</div>
+        <div class="s">A live view of the socket — watch the raw HTTP bytes
+          (request line, headers, status line) as you send requests.</div>
+      </div>
+      <a class="go" href="/_inspect" target="_blank">Open /_inspect ▸</a>
+    </section>
+
+    <footer data-r="6">
+      Edit <code>routes/api/penguins/index.js</code> while the server runs, save,
+      and re-send — <b style="color:var(--ink)">hot reload</b>, no restart.
+      &nbsp;·&nbsp; <a href="/">← home</a>
+      &nbsp;·&nbsp; <a href="/play">🐧 play</a>
+      &nbsp;·&nbsp; <a href="/_routes">/_routes</a> (JSON)
+      &nbsp;·&nbsp; <a href="/_data">/_data</a> (explorer)
+      &nbsp;·&nbsp; <a href="/_inspect">/_inspect</a> (wire)
+      &nbsp;·&nbsp; Full Stack Engineering · Reichman University · 2026
+    </footer>
+  </div>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const respEl = $('#resp'), statusEl = $('#status');
+
+    // Always-escape HTML, even though our route names come from local
+    // files we control. Defense in depth + good habit.
+    const esc = (s) => String(s).replace(/[&<>"']/g,
+      c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const safeMethod = (m) => /^[A-Z]+$/.test(m) ? m : '';
+
+    async function loadRoutes() {
+      const r = await fetch('/_routes');
+      const { routes } = await r.json();
+      $('#routes').innerHTML = routes.map(rt => {
+        const methods = rt.methods.map(safeMethod).filter(Boolean);
+        const data_p = esc((rt.path || '').replace(':id', '1'));
+        const data_m = esc(methods[0] || 'GET');
+        return `
+        <div class="route">
+          ${methods.map(m => `<span class="m ${m}">${m}</span>`).join('')}
+          <a href="#" data-p="${data_p}" data-m="${data_m}">${esc(rt.path)}</a>
+        </div>`;
+      }).join('');
+      document.querySelectorAll('.route a').forEach(a =>
+        a.onclick = (e) => {
+          e.preventDefault();
+          $('#path').value = a.dataset.p;
+          $('#method').value = a.dataset.m;
+          syncBodyBar();
+          // GET fires immediately (nothing to fill in). POST/PUT/DELETE
+          // fill the form and wait so you can set the name (POST/PUT) or
+          // confirm/edit the id in the path (DELETE) before sending.
+          if (a.dataset.m === 'GET') {
+            send();
+          } else {
+            ($('#bodyBar').style.display !== 'none'
+              ? $('#bodyName')
+              : $('#path')).focus();
+          }
+        });
+    }
+
+    async function send() {
+      const method = $('#method').value;
+      let path = $('#path').value.trim();
+      statusEl.textContent = `${method} ${path} …`;
+      try {
+        const opt = { method };
+        if (method === 'POST' || method === 'PUT') {
+          // Send the name as a query param instead of a JSON request body.
+          // A body-bearing fetch over plain http:// to a LAN IP is
+          // silently blocked by some mobile browsers ("permission
+          // denied"); a query string is not. The server reads req.query
+          // too, so this behaves the same as a JSON body.
+          const name = ($('#bodyName').value || 'Pingu').trim();
+          path += (path.includes('?') ? '&' : '?') +
+            'name=' + encodeURIComponent(name);
+        }
+        const t0 = performance.now();
+        const res = await fetch(path, opt);
+        const ms = (performance.now() - t0).toFixed(0);
+        const txt = await res.text();
+        const ok = res.ok;
+        statusEl.innerHTML =
+          `<b class="${ok?'ok':'err'}">${res.status} ${res.statusText}</b>` +
+          ` · ${ms} ms · ${res.headers.get('content-type')||''}`;
+        try { respEl.textContent = JSON.stringify(JSON.parse(txt), null, 2); }
+        catch { respEl.textContent = txt || '(empty body)'; }
+      } catch (err) {
+        statusEl.innerHTML = `<b class="err">request failed</b>`;
+        respEl.textContent =
+          'The browser blocked or could not send this request.\n\n' +
+          String(err) + '\n\n' +
+          'Sent: ' + method + ' ' + location.origin + path + '\n' +
+          'If this says "Load failed" / "permission" on a phone, the page ' +
+          'is reaching the server (you can see it) but the POST body is ' +
+          'being blocked by the browser. Try: same Wi-Fi, disable any ' +
+          'content/ad blocker for this site, or use the Mac browser.';
+      }
+    }
+
+    // Show the name field only when the method can carry a payload.
+    function syncBodyBar() {
+      const m = $('#method').value;
+      const show = (m === 'POST' || m === 'PUT');
+      $('#bodyBar').style.display = show ? 'flex' : 'none';
+      if (show) {
+        $('#bodyName').placeholder =
+          (m === 'PUT' ? 'new name (PUT)' : 'name to spawn (POST)') +
+          ' — e.g. Pingu';
+      }
+      // DELETE has no body; the resource id lives in the path. Nudge it.
+      if (m === 'DELETE') {
+        statusEl.textContent =
+          'DELETE — set the id in the path (e.g. /api/penguins/1), then Send.';
+      }
+    }
+    $('#method').addEventListener('change', syncBodyBar);
+    syncBodyBar();
+
+    $('#go').onclick = send;
+    $('#path').addEventListener('keydown', e => e.key==='Enter' && send());
+    $('#bodyName').addEventListener('keydown', e => e.key==='Enter' && send());
+    loadRoutes();
+
+    // ----- Live chat (over the from-scratch WebSocket) -----------------
+    // This panel is a WATCHER on the penguin world's /world socket: it sees
+    // every chat line live (penguins typing in /play AND other watchers) and
+    // can post into the chat itself — but it spawns NO penguin avatar. It
+    // sends {t:'watch'} on open, renders incoming {t:'chatlog'}, and posts
+    // via {t:'say', name, text}. Same hand-written WebSocket the game uses.
+    const chatFeed = $('#chatFeed');
+    const chatWho  = $('#chatWho');
+    const chatWhat = $('#chatWhat');
+    const chatErr  = $('#chatErr');
+    let chatSock = null;
+
+    function chatEmpty(){
+      chatFeed.innerHTML = '<div class="feed-empty">No chat yet — say hi, or '
+        + '<a href="/play" target="_blank" style="color:#7fc7ff">enter the world</a>.</div>';
+    }
+    function addChat(name, room, text){
+      const empty = chatFeed.querySelector('.feed-empty');
+      if (empty) empty.remove();
+      const at = new Date().toLocaleTimeString();
+      chatFeed.insertAdjacentHTML('afterbegin',
+        '<div class="note fresh">'
+        + '<div class="who">'+esc(name||'anon')+' <span style="color:#6b769c;font-weight:400">· '+esc(room||'')+' · '+at+'</span></div>'
+        + '<div class="what">'+esc(text||'')+'</div></div>');
+      while (chatFeed.children.length > 40) chatFeed.lastElementChild.remove();
+    }
+    function setChatConn(ok){
+      chatErr.style.display = ok ? 'none' : 'block';
+      if (!ok) chatErr.textContent = 'chat disconnected — reconnecting…';
+    }
+    function connectChat(){
+      chatSock = new WebSocket('ws://' + location.host + '/world');
+      chatSock.onopen = () => { setChatConn(true); chatSock.send(JSON.stringify({ t: 'watch' })); };
+      chatSock.onmessage = (e) => {
+        let m; try { m = JSON.parse(e.data); } catch { return; }
+        if (m.t === 'chatlog') addChat(m.name, m.room, m.text);
+      };
+      chatSock.onclose = () => { setChatConn(false); chatSock = null; setTimeout(connectChat, 1500); };
+      chatSock.onerror = () => {};
+    }
+    function sendChat(){
+      const who  = chatWho.value.trim() || 'guest';
+      const what = chatWhat.value.trim();
+      if (!what || !chatSock || chatSock.readyState !== 1) { chatWhat.focus(); return; }
+      chatSock.send(JSON.stringify({ t: 'say', name: who, text: what }));
+      chatWhat.value = '';
+    }
+    $('#chatGo').onclick = sendChat;
+    $('#chatForm').addEventListener('submit', (e) => { e.preventDefault(); sendChat(); });
+    chatWhat.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+    chatEmpty();
+    connectChat();
+  </script>
+</body>
+</html>

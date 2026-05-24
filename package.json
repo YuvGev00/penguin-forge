@@ -1,0 +1,21 @@
+{
+  "name": "penguin-forge",
+  "version": "1.0.0",
+  "description": "A shared multiplayer penguin world running on the from-scratch fs-forge HTTP/WebSocket framework — the framework's store + wire inspector act as a live control room for the game. Zero dependencies, only Node's net module.",
+  "keywords": [
+    "websocket",
+    "multiplayer",
+    "from-scratch",
+    "net",
+    "no-dependencies"
+  ],
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/smoke.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "MIT"
+}
