@@ -14,6 +14,26 @@ const W = canvas.width, H = canvas.height;
 let ws, myId = null, myName = 'penguin';
 let prev = null, cur = null, prevAt = 0, curAt = 0;
 const anim = new Map(); // id -> { phase, squash, lastX, lastY }
+
+// ---------- room background images ----------
+// Each room is a painted scene in public/bg/<room>.png, drawn to fill the
+// 1200x720 canvas. Preloaded once; until an image is ready (or if it fails),
+// we fall back to the room's flat bg colour from the snapshot.
+const ROOM_BG = {};
+['plaza', 'cafe', 'university', 'lab', 'library', 'arcade'].forEach((room) => {
+  const img = new Image();
+  img.src = '/bg/' + room + '.png';
+  ROOM_BG[room] = img;
+});
+function paintRoomBg(room) {
+  const img = ROOM_BG[room];
+  if (img && img.complete && img.naturalWidth > 0) {
+    ctx.drawImage(img, 0, 0, W, H);
+  } else {
+    ctx.fillStyle = (cur && cur.bg) || '#10203a';
+    ctx.fillRect(0, 0, W, H);
+  }
+}
 let ripples = [];       // click destination puffs
 let footprints = [];    // fading prints behind walking penguins
 const snow = Array.from({ length: 34 }, () => ({
@@ -835,14 +855,9 @@ function render() {
   const now = performance.now();
   if (!cur) return;
 
-  const room = cur.room;
-  if (room === 'plaza') paintPlaza(now);
-  else if (room === 'cafe') paintCafe(now);
-  else if (room === 'arcade') paintArcade(now);
-  else if (room === 'university') paintUniversity(now);
-  else if (room === 'lab') paintLab(now);
-  else if (room === 'library') paintLibrary(now);
-  else paintPlaza(now);
+  // Painted background image per room (doors, cabinets, penguins and chat
+  // bubbles are drawn on top of this, below).
+  paintRoomBg(cur.room);
 
   // ---- change 1: door affordance ----
   const me = (cur.players || []).find((p) => p.id === myId);
