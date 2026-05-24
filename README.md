@@ -39,7 +39,7 @@ your LAN and friends can join too.)
 | URL | What it is |
 |---|---|
 | **`/`** | Home — jump to the game or the framework console. |
-| **`/play`** | **The game.** Click to walk, type to chat, walk through doors to change rooms, step onto an arcade cabinet to play. |
+| **`/play`** | **The game.** Click to walk, type to chat, step onto a glowing portal (a doorway, the arcade carpet, a staircase) to travel between rooms, or onto an arcade cabinet to play. |
 | **`/forge`** | **The framework console** — a live route table + request runner, plus a live chat that mirrors the game's chat. |
 | **`/_data`** | **Data Explorer** — a live table of every penguin currently in the world (name + room). Rows appear when someone joins, update as they walk between rooms, and disappear when they leave. |
 | **`/_inspect`** | **Wire Inspector** — watch the actual bytes and game events cross the socket in real time (joins, chats, room changes, kicks). |
@@ -48,7 +48,8 @@ your LAN and friends can join too.)
 
 ## The world
 
-Six connected rooms, reachable by walking through their doors:
+Six connected rooms, each a hand-painted scene. Travel by stepping onto the
+glowing portal marking a doorway or feature in each room:
 
 - **Town Plaza** — the spawn point and hub.
 - **Cozy Café** — a quiet hangout.

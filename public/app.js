@@ -850,6 +850,44 @@ function ambientSnow() {
   }
 }
 
+// A step-on portal / cabinet marker on the painted background: a yellowish
+// shimmer beam rising from a glowing floor pool. Pulses gently; brightens when
+// a penguin is near.
+function drawPortalGlow(cx, cy, rx, ry, pulse, near) {
+  const beamA = near ? 0.85 + 0.15 * pulse : 0.55 + 0.18 * pulse;
+  const beamH = (near ? 150 : 125) + 16 * pulse; // beam height (px upward)
+  const halfW = rx * 0.55; // beam half-width at the base
+  ctx.save();
+  // Additive blending so the yellow glows brightly over dark/busy art.
+  ctx.globalCompositeOperation = 'lighter';
+  // upward shimmer beam — bright at the floor, fading to nothing at the top
+  const beam = ctx.createLinearGradient(cx, cy, cx, cy - beamH);
+  beam.addColorStop(0, `rgba(255,216,70,${beamA})`);
+  beam.addColorStop(0.5, `rgba(255,200,50,${beamA * 0.45})`);
+  beam.addColorStop(1, 'rgba(255,200,50,0)');
+  ctx.fillStyle = beam;
+  ctx.beginPath();
+  ctx.moveTo(cx - halfW, cy);
+  ctx.lineTo(cx + halfW, cy);
+  ctx.lineTo(cx + halfW * 0.4, cy - beamH);
+  ctx.lineTo(cx - halfW * 0.4, cy - beamH);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+function drawPortalLabel(cx, topY, label) {
+  ctx.save();
+  ctx.font = '700 13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  const tw = ctx.measureText(label).width;
+  // pill background for legibility over busy art
+  ctx.fillStyle = 'rgba(10,14,24,0.78)';
+  roundRect(cx - tw / 2 - 8, topY - 20, tw + 16, 20, 10); ctx.fill();
+  ctx.fillStyle = '#ffe7a8';
+  ctx.fillText(label, cx, topY - 6);
+  ctx.restore();
+}
+
 function render() {
   requestAnimationFrame(render);
   const now = performance.now();
@@ -859,59 +897,28 @@ function render() {
   // bubbles are drawn on top of this, below).
   paintRoomBg(cur.room);
 
-  // ---- change 1: door affordance ----
+  // ---- portal markers ----
+  // Rooms are travelled by stepping ONTO the painted feature (a doorway, the
+  // red carpet, a staircase). We don't draw a door body over the art anymore —
+  // just a subtle glowing hotspot on the spot, which pulses and brightens +
+  // shows its label when a penguin is near.
   const me = (cur.players || []).find((p) => p.id === myId);
+  const pulse = 0.5 + 0.5 * Math.sin(now / 500); // 0..1 slow pulse
   for (const d of cur.doors || []) {
     const dcx = d.x + d.w / 2;
     const dcy = d.y + d.h / 2;
-    const nearPlayer = me && Math.hypot(me.x - dcx, me.y - dcy) < 90;
-
-    // warm glow ring when player is close (drawn first, behind door body)
-    if (nearPlayer) {
-      ctx.strokeStyle = 'rgba(245,190,70,0.45)';
-      ctx.lineWidth = 4;
-      roundRect(d.x - 4, d.y - 4, d.w + 8, d.h + 8, 18);
-      ctx.stroke();
-    }
-
-    // door body fill
-    ctx.fillStyle = '#7a4a24';
-    roundRect(d.x, d.y, d.w, d.h, 14); ctx.fill();
-
-    // 3px outline
-    ctx.strokeStyle = '#3a2410';
-    ctx.lineWidth = 3;
-    roundRect(d.x, d.y, d.w, d.h, 14); ctx.stroke();
-
-    // inner highlight on top edge
-    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(d.x + 14, d.y + 2);
-    ctx.lineTo(d.x + d.w - 14, d.y + 2);
-    ctx.stroke();
-
-    // contact shadow ellipse below door
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    ctx.beginPath();
-    ctx.ellipse(dcx, d.y + d.h + 5, d.w * 0.42, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // label — always horizontal
-    ctx.save();
-    ctx.fillStyle = '#fff';
-    ctx.shadowColor = 'rgba(0,0,0,0.55)';
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetX = 1;
-    ctx.shadowOffsetY = 1;
-    ctx.textAlign = 'center';
-    // pick font size: try 13px, shrink to 11px if text wider than door
-    ctx.font = '700 13px system-ui, sans-serif';
-    const tw = ctx.measureText(d.label).width;
-    if (tw > d.w - 8) ctx.font = '700 11px system-ui, sans-serif';
-    ctx.fillText(d.label, dcx, dcy + 5);
-    ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-    ctx.restore();
+    const rx = d.w * 0.45, ry = d.h * 0.42;
+    const near = me && Math.hypot(me.x - dcx, me.y - dcy) < 110;
+    drawPortalGlow(dcx, dcy, rx, ry, pulse, near);
+    if (near) drawPortalLabel(dcx, d.y - 6, d.label);
+  }
+  // Cabinet zones get the same hotspot treatment (they're "step here" spots too).
+  for (const cab of cur.cabinets || []) {
+    const z = cab.zone;
+    const cx = z.x + z.w / 2, cy = z.y + z.h / 2;
+    const near = me && Math.hypot(me.x - cx, me.y - cy) < 110;
+    drawPortalGlow(cx, cy, z.w * 0.45, z.h * 0.42, pulse, near);
+    if (near) drawPortalLabel(cx, z.y - 6, cab.label);
   }
 
   // footprints (drawn under penguins)

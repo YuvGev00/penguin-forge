@@ -14,90 +14,90 @@ const SPEED = 165; // px / second a penguin walks
 const ARRIVE = 6; // px — close enough = arrived
 const CHAT_MS = 6000; // how long a chat bubble lives
 
-// Room layout. Doors are rectangles; stepping into one moves you to the
-// linked room, arriving at that room's matching entry point.
+// Room layout. Room travel is now done with PORTALS: every door is a `soft`
+// step-on zone (walk your penguin onto it and you travel — same feel as the
+// arcade cabinets). Portal zones are positioned over the matching feature in
+// each room's painted background (public/bg/<room>.png). Each room's `spawn`
+// is kept clear of all its own portal zones so arriving never re-triggers a
+// portal. Zones are given as top-left {x,y,w,h} on the 1200x720 world.
 const ROOMS = {
   plaza: {
     name: 'Town Plaza',
     bg: '#1a2740',
-    // Side doors hug the screen edges (outer 64px). The University stands
-    // in the plaza; its entrance is a wide doorway at the BASE of the
-    // building (on the snow, where penguins actually walk) so you can
-    // waddle straight up into it.
     doors: [
-      { x: 1136, y: 290, w: 64, h: 150, to: 'cafe', label: '☕ Café' },
-      { x: 0, y: 290, w: 64, h: 150, to: 'arcade', label: '🕹 Arcade' },
-      // Entrance threshold right under the arch — `soft` so simply
-      // stepping onto it enters (no precise click needed), but kept
-      // narrow & high so diagonal paths to the side doors don't cross
-      // it. Centred on the building (x=600).
-      { x: 552, y: 392, w: 96, h: 150, to: 'university',
-        label: '🎓 University', soft: true },
+      // On the gold star on the ARCADE facade.
+      { x: 600, y: 300, w: 130, h: 130, to: 'arcade', label: '🕹 Arcade', soft: true },
+      // The UNIVERSITY building doors (right).
+      { x: 896, y: 295, w: 130, h: 130, to: 'university', label: '🎓 University', soft: true },
+      // The TIMES/KARNAF café entrance (left, nudged right toward the seating).
+      { x: 255, y: 326, w: 130, h: 130, to: 'cafe', label: '☕ Café', soft: true },
     ],
-    // Spawn well below & away from the entrance threshold so returning
-    // from the university never re-triggers it.
-    spawn: { x: 600, y: 660 },
+    spawn: { x: 600, y: 650 },
   },
   cafe: {
     name: 'Cozy Café',
     bg: '#2a1f2e',
     doors: [
-      { x: 0, y: 290, w: 64, h: 150, to: 'plaza', label: '← Plaza' },
+      // The door directly under the green EXIT sign.
+      { x: 492, y: 210, w: 120, h: 130, to: 'plaza', label: '← Plaza', soft: true },
     ],
-    spawn: { x: 260, y: 420 },
+    spawn: { x: 540, y: 560 },
   },
   // ---- The Gothic University: an entrance hall that branches into two
-  // study rooms. Mirrors the arcade/cafe pattern; props/activities for
-  // the sub-rooms come later.
+  // study rooms.
   university: {
     name: 'Gothic University — Great Hall',
     bg: '#1d1a2e',
     doors: [
-      { x: 528, y: 624, w: 144, h: 96, to: 'plaza', label: '↓ Plaza' },
-      { x: 0, y: 290, w: 64, h: 150, to: 'lab', label: '🔬 Lab' },
-      { x: 1136, y: 290, w: 64, h: 150, to: 'library', label: '📚 Library' },
+      // The big central UNIVERSITY HALL doors → back to the plaza.
+      { x: 540, y: 270, w: 120, h: 130, to: 'plaza', label: '↓ Plaza', soft: true },
+      // The door under the graduation-cap emblem (right) → Lab.
+      { x: 845, y: 240, w: 120, h: 130, to: 'lab', label: '🔬 Lab', soft: true },
+      // The door under the open-book emblem (left) → Library.
+      { x: 224, y: 240, w: 120, h: 130, to: 'library', label: '📚 Library', soft: true },
     ],
-    spawn: { x: 600, y: 480 },
+    spawn: { x: 560, y: 560 },
   },
   lab: {
     name: 'University — Lab & Classroom',
     bg: '#16201f',
     doors: [
-      { x: 1136, y: 290, w: 64, h: 150, to: 'university',
-        label: 'Hall →' },
+      // The wooden door on the left → back to the Hall.
+      { x: 45, y: 320, w: 120, h: 130, to: 'university', label: 'Hall →', soft: true },
     ],
-    spawn: { x: 300, y: 460 },
-    // The Python "Class Console" cabinet was removed in penguin-forge to keep
-    // the project pure-Node (no python3 dependency); the lab remains as an
-    // explorable study room.
+    spawn: { x: 600, y: 540 },
     cabinets: [],
   },
   library: {
     name: 'University — Library',
     bg: '#221c14',
     doors: [
-      { x: 0, y: 290, w: 64, h: 150, to: 'university', label: '← Hall' },
+      // The silver door at the top of the staircase (top-right) → Hall.
+      { x: 876, y: 110, w: 120, h: 120, to: 'university', label: '← Hall', soft: true },
     ],
-    spawn: { x: 900, y: 460 },
+    spawn: { x: 640, y: 600 },
     cabinets: [
+      // The reading nook at the base of the ladder (left).
       { id: 'shelf', game: 'book', label: '📖 Bookshelf',
-        zone: { x: 520, y: 470, w: 160, h: 120 } },
+        zone: { x: 276, y: 430, w: 130, h: 130 } },
     ],
   },
   arcade: {
     name: 'Arcade',
     bg: '#0f1f2e',
     doors: [
-      { x: 1136, y: 290, w: 64, h: 150, to: 'plaza', label: 'Plaza →' },
+      // The stairs by the right wall → back to the plaza.
+      { x: 1055, y: 445, w: 130, h: 130, to: 'plaza', label: 'Plaza →', soft: true },
     ],
-    spawn: { x: 600, y: 560 },
-    // Cabinets: walk a penguin into the zone to play that game. The
-    // players of a cabinet's game are exactly the penguins standing in it.
+    spawn: { x: 600, y: 540 },
+    // Cabinets: walk onto the chair in front of a machine to play.
     cabinets: [
+      // The chair in front of the DRAWING GAME cabinet (left).
       { id: 'draw', game: 'draw', label: '🎨 Draw & Guess',
-        zone: { x: 175, y: 360, w: 130, h: 150 } },
+        zone: { x: 180, y: 358, w: 130, h: 130 } },
+      // The black chair at the REACTION GAME / ASTRO-BARRIER machine (upper-right).
       { id: 'duel', game: 'duel', label: '⚡ Reaction Duel',
-        zone: { x: 895, y: 360, w: 130, h: 150 } },
+        zone: { x: 815, y: 265, w: 130, h: 130 } },
     ],
   },
 };
