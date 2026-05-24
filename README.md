@@ -1,137 +1,176 @@
 # 🐧 penguin-forge
 
-A shared, explorable **multiplayer penguin world** running entirely on a
-from-scratch HTTP/WebSocket framework — and wired so the framework's own
-dashboards become a **live control room** for the running game.
+A shared, real-time **multiplayer penguin world** — and the from-scratch web
+framework that runs it. Pick a name, waddle around as a hand-drawn penguin, bump
+into other people, hop between rooms, chat in speech bubbles, and play arcade
+mini-games. Everyone sees everyone, live.
 
-> Built only on Node's `net` module. **Zero dependencies** — no `express`,
-> `ws`, `socket.io`, or game engine. The HTTP server, the WebSocket transport,
-> the authoritative game loop, and the penguin artwork are all hand-written.
+Underneath, the whole thing — the HTTP server, the WebSocket transport, the
+authoritative game loop, the routing, the JSON store, the penguin artwork — is
+**hand-written on Node's raw `net` module**. No `express`, no `ws`, no
+`socket.io`, no game engine, no sprites. **Zero dependencies.**
 
-## The idea
+The twist that makes it interesting: the framework doesn't just *serve* the
+game, it **watches and controls** it. The same dashboards that ship with the
+framework become a live admin console for the running world — see every penguin
+in a data table, watch game events stream across the wire, and spawn / rename /
+kick players over a plain REST API.
 
-This project merges two from-scratch projects:
+---
 
-- **fs-forge** — a creative HTTP/1.1 + WebSocket framework (filesystem routing,
-  a `` ws`` `` route tag, a tagged-template `` http`` `` DSL, a reactive JSON
-  store with a Data Explorer at `/_data`, a Wire Inspector at `/_inspect`). It
-  is **vendored** here under `src/`.
-- **penguin-world** — a real-time multiplayer game (authoritative 20 Hz world
-  loop, multi-room, chat, arcade mini-games). Its pure game logic lives in
-  `game/`.
+## Quick start
 
-The twist: instead of the game owning its own server, it runs **as a route
-inside fs-forge**, so the framework sits behind the scenes and observes — and
-controls — everything:
-
-| Game event | Surfaces in… |
-|---|---|
-| A penguin joins (name + room) | the **store** → a live row in **`/_data`** |
-| Walking between rooms | the row's `room` updates live in **`/_data`** |
-| Join / chat / room change / leave | readable `GAME …` lines in the **Wire Inspector** (`/_inspect`) |
-| All movement + chat transport | the from-scratch **WebSocket** at `/world` |
-| Admin spawn / rename / **kick** | the REST API **`/api/penguins`** drives the live world |
-
-So fs-forge becomes the *admin / ops view* of a living multiplayer world.
-
-## Run it
+Requires **Node ≥ 16**. There is nothing to install.
 
 ```bash
 node server.js          # → http://localhost:4300
-npm test                # end-to-end smoke (14 assertions)
+npm test                # run the test suite
 PORT=8080 node server.js
 ```
 
-Open `http://localhost:4300/` in **several tabs**, give each a name, and walk
-around together in real time.
+Open **http://localhost:4300/** in a couple of tabs, give each penguin a
+different name, and watch them move around together in real time. (Share it on
+your LAN and friends can join too.)
 
-## The pages
+---
 
-- **`/`** — the hub: links to the game and the framework showcase.
-- **`/play`** — the penguin game (waddle, chat, explore rooms, arcade games),
-  live for everyone over the `/world` WebSocket.
-- **`/forge`** — fs-forge's framework showcase: the live route table + API
-  console, the filesystem-routing diagram, the DSL sample, and a **live chat**
-  panel that rides the same `/world` socket (a chat-only "watcher", no avatar).
-- **`/_data`** — the live penguin roster (a row appears on join, its `room`
-  updates as the penguin walks, it vanishes on disconnect).
-- **`/_inspect`** — the wire: the `/world` `101` handshake plus `GAME …` event
-  lines as they happen (live 20 Hz movement is intentionally muted so the feed
-  stays legible).
+## What you can open
 
-## The REST API drives the live game (`/api/penguins`)
-
-The framework's store + REST verbs are wired to the *running* world via a small
-in-process bridge (`game/hub.js`):
-
-| Verb | Effect |
+| URL | What it is |
 |---|---|
-| `GET /api/penguins` | the live roster (also rendered by `/_data`) |
-| `POST /api/penguins` `{name}` | **spawns** a real (socket-less) penguin into the world |
-| `PUT /api/penguins/:id` `{name}` | **renames** a live penguin (`:id` = store row id) |
-| `DELETE /api/penguins/:id` | **kicks** the penguin — removed from the world; if it's a connected player, a "you were kicked" overlay pops up on its screen and its socket closes |
+| **`/`** | Home — jump to the game or the framework console. |
+| **`/play`** | **The game.** Click to walk, type to chat, walk through doors to change rooms, step onto an arcade cabinet to play. |
+| **`/forge`** | **The framework console** — a live route table + request runner, plus a live chat that mirrors the game's chat. |
+| **`/_data`** | **Data Explorer** — a live table of every penguin currently in the world (name + room). Rows appear when someone joins, update as they walk between rooms, and disappear when they leave. |
+| **`/_inspect`** | **Wire Inspector** — watch the actual bytes and game events cross the socket in real time (joins, chats, room changes, kicks). |
 
-Try it from the `/forge` console, or:
+---
+
+## The world
+
+Six connected rooms, reachable by walking through their doors:
+
+- **Town Plaza** — the spawn point and hub.
+- **Cozy Café** — a quiet hangout.
+- **Gothic University** — a great hall branching into two study rooms:
+  - **Lab** — an explorable room.
+  - **Library** — has a **📖 Bookshelf** you can read and leave margin notes in.
+- **Arcade** — two cabinets to play:
+  - **🎨 Draw & Guess** — one penguin draws, the others guess.
+  - **⚡ Reaction Duel** — fastest reflex wins, best of three.
+
+Movement is **server-authoritative**: you don't move yourself, you tell the
+server where you want to go, and it walks every penguin at a fixed speed each
+tick and broadcasts the result. The browser smoothly interpolates between
+updates, so motion looks fluid even though the truth updates 20 times a second.
+A laggy or malicious client can't teleport or cheat its position.
+
+---
+
+## Control the world over HTTP
+
+The game's roster isn't just for show — the REST API actually drives the **live**
+world. Anything you do here happens in every player's browser instantly.
 
 ```bash
+# List everyone currently in the world
+curl http://localhost:4300/api/penguins
+
+# Spawn a new penguin into the world
 curl -X POST 'http://localhost:4300/api/penguins?name=Pingu'
-curl -X PUT  'http://localhost:4300/api/penguins/1?name=Skipper'
+
+# Rename a penguin (id is the one shown in the roster / Data Explorer)
+curl -X PUT 'http://localhost:4300/api/penguins/1?name=Skipper'
+
+# Kick a penguin — if it's a live player, a "you were kicked"
+# notice pops up full-screen on their game and disconnects them
 curl -X DELETE 'http://localhost:4300/api/penguins/1'
 ```
 
-## How the integration works
+You can do the same thing from the request runner on **`/forge`** without
+touching the terminal.
 
-- **`routes/world.js`** is the only transport-coupled file (it replaces
-  penguin-world's standalone `server.js`). At module scope it runs the
-  authoritative 20 Hz loop, keeps the client map + a `watchers` set (chat-only
-  clients), fans out per-room snapshots over fs-forge WebSocket connections, and
-  routes inbound `{t:'join'|'move'|'chat'|'leave'|'cab'|'watch'|'say'}` messages
-  into the pure game logic. It registers a control API on `game/hub.js`
-  (`spawn`/`rename`/`kick`) so the REST routes can reach the live world.
-- **Store-write boundary:** identity is durable, motion is ephemeral. A penguin
-  row is written on **join** (`insert`), updated **only when its room changes**
-  (`update`, diffed against the last room — never per tick), and removed on
-  **disconnect / kick** (`remove`). The 20 Hz x/y stream never touches disk.
-- **Wire hook:** `routes/world.js` reaches the inspector via `src/runtime.js`
-  (one of two small additions to the vendored framework) and feeds it a readable
-  line per meaningful event (join / chat / room change / leave / spawn / kick).
-- **Conn-less penguins:** a `POST`-spawned penguin has no socket. It lives in
-  `world.players` (so it walks and appears in everyone's snapshots) and in the
-  roster; the fan-out simply skips delivering to a `null` connection.
+| Method | Path | Effect |
+|---|---|---|
+| `GET` | `/api/penguins` | the live roster |
+| `POST` | `/api/penguins` | spawn a penguin |
+| `PUT` | `/api/penguins/:id` | rename a penguin |
+| `DELETE` | `/api/penguins/:id` | kick a penguin |
 
-## What was dropped vs. penguin-world
+---
 
-The classroom mini-game graded Python via a `python3` subprocess. It was
-removed here to keep penguin-forge **pure-Node with zero external
-dependencies** — so `judge.js` is gone, the `class` cabinet is removed from the
-Lab (which remains an explorable room), and `ClassRoom` is dropped from the
-arcade. The Draw & Guess, Reaction Duel, and Bookshelf games are untouched.
+## How it's built
+
+**Routing is the filesystem.** There is no route registration — a file under
+`routes/` *is* an endpoint. `routes/index.js` → `/`, `routes/play.js` → `/play`,
+`routes/api/penguins/[id].js` → `/api/penguins/:id`. Each file reads like the
+HTTP it serves, via a tiny tagged-template DSL:
+
+```js
+// routes/api/penguins/[id].js
+module.exports = http`
+  PUT    ${({ params }) => json(rename(params.id))}
+  DELETE ${() => noContent()}
+`;
+```
+
+**Real WebSockets, from scratch.** `routes/world.js` is a `` ws`` `` route at
+`/world`. It performs the RFC 6455 handshake, decodes/encodes frames, and runs
+the authoritative 20 Hz game loop, broadcasting each room's state to the players
+in it. The game client and the `/forge` chat both speak to this one hand-written
+socket.
+
+**The framework watches the game.** Two design choices make the dashboards a
+true control room:
+
+- **Identity is persisted, motion is not.** When a penguin joins, a row is
+  written to the JSON store (so it shows up in the Data Explorer); its room is
+  updated only when it actually changes rooms. The 20 Hz position stream stays
+  in memory and never touches disk — the roster shows *who* and *where*, not a
+  flood of coordinates.
+- **Meaningful events surface on the wire.** Joins, chats, room changes, spawns,
+  and kicks are written into the Wire Inspector's feed as readable lines, while
+  the high-frequency movement frames are kept out so the feed stays legible.
+
+---
 
 ## Layout
 
 ```
 penguin-forge/
-  server.js              forge({routesDir,staticDir}).listen
-  src/                   vendored fs-forge framework (+ runtime.js — see above)
+  server.js              start the server
+  src/                   the framework: net server, HTTP parser, router, DSL,
+                         WebSocket, JSON store, Data Explorer, Wire Inspector
   game/
-    world.js  arcade.js  pure, transport-agnostic game logic
-    hub.js               the REST↔live-game bridge (spawn/rename/kick)
+    world.js             the world: rooms, players, the 20 Hz simulation
+    arcade.js            the arcade mini-games (draw, duel, bookshelf)
+    hub.js               lets the REST API act on the live world
   routes/
-    index.js             the hub page (/)
-    play.js              the game page (/play)
-    forge.js             the framework showcase + live chat (/forge)
-    world.js             the /world WebSocket route (the adapter + 20 Hz loop)
-    api/penguins/
-      index.js           GET[list] roster + POST[create] (spawn)
-      [id].js            PUT[update] (rename) + DELETE[remove] (kick)
-  public/                the browser client (index.html hub, game.html, forge.html, app.js, …)
-  test/  smoke.js        14 end-to-end assertions
+    index.js             /        the home page
+    play.js              /play    the game
+    forge.js             /forge   the framework console + live chat
+    world.js             /world   the WebSocket + game loop
+    api/penguins/        the roster + spawn/rename/kick REST API
+  public/                the browser client (pages, game renderer, art)
+  test/  smoke.js        end-to-end tests over real sockets
 ```
+
+---
 
 ## Tests
 
-`npm test` runs 14 assertions over raw `net` sockets: the `/world` handshake,
-join → store row, chat broadcast, disconnect cleanup, and the full REST cycle
-(POST spawn → snapshot, PUT rename, DELETE kick → `{t:'kicked'}` frame + row
-removed, watcher `chatlog` / `say`). The vendored fs-forge framework keeps its
-own 99-assertion suite passing unchanged.
+```bash
+npm test
+```
+
+The suite drives the server over raw sockets and checks the full path end to
+end: the WebSocket handshake, a penguin joining and landing in the roster, chat
+broadcasting between two clients, disconnect cleanup, and the complete REST
+cycle — spawning a penguin, renaming it, and kicking a connected player (right
+down to the "kicked" message arriving on their socket).
+
+---
+
+## License
+
+MIT.
