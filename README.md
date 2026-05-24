@@ -168,9 +168,3 @@ end: the WebSocket handshake, a penguin joining and landing in the roster, chat
 broadcasting between two clients, disconnect cleanup, and the complete REST
 cycle — spawning a penguin, renaming it, and kicking a connected player (right
 down to the "kicked" message arriving on their socket).
-
----
-
-## License
-
-MIT.
