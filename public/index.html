@@ -1,101 +1,72 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>penguin-forge · home</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<style>
-  :root{
-    color-scheme:dark;
-    --bg:#070a14; --ink:#eaf0ff; --ink-dim:#9aa6cc; --ink-faint:#6b769c;
-    --line:rgba(255,255,255,.10); --line-soft:rgba(255,255,255,.06);
-    --glass:rgba(255,255,255,.05);
-    --violet:#a78bff; --teal:#5fe3c8; --pink:#ff6fae; --amber:#ffce73;
-    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
-    --sans:"Manrope",system-ui,sans-serif;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:var(--sans);color:var(--ink);background:var(--bg);
-    min-height:100vh;-webkit-font-smoothing:antialiased;position:relative;overflow-x:hidden}
-  body::before{content:"";position:fixed;inset:-30%;z-index:0;pointer-events:none;background:
-      radial-gradient(38% 38% at 16% 14%, rgba(120,90,255,.30), transparent 70%),
-      radial-gradient(34% 34% at 84% 22%, rgba(0,210,185,.20), transparent 70%),
-      radial-gradient(44% 44% at 60% 96%, rgba(255,90,170,.16), transparent 70%);
-    filter:blur(46px);animation:drift 26s ease-in-out infinite alternate}
-  @keyframes drift{0%{transform:translate3d(0,0,0) scale(1)}100%{transform:translate3d(-2%,2%,0) scale(1.06)}}
-  @media(prefers-reduced-motion:reduce){body::before{animation:none}}
-  .frame{position:relative;z-index:1;max-width:920px;margin:0 auto;padding:3.5rem 1.5rem 5rem}
-  .hero{text-align:center;margin-bottom:2.5rem}
-  .peng{font-size:3.5rem;line-height:1}
-  h1{font-size:2.6rem;font-weight:800;letter-spacing:-.02em;margin-top:.4rem;
-    background:linear-gradient(118deg,#cbd6ff,#a78bff 50%,#5fe3c8);
-    -webkit-background-clip:text;-webkit-text-fill-color:transparent}
-  .tag{font-size:1.15rem;color:var(--ink-dim);margin-top:.6rem;line-height:1.6}
-  .tag b{color:var(--ink)}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;margin-top:1rem}
-  @media(max-width:760px){.grid{grid-template-columns:1fr}}
-  .card{border:1px solid var(--line);border-radius:20px;padding:1.6rem 1.5rem;
-    background:var(--glass);backdrop-filter:blur(14px);display:flex;flex-direction:column;
-    gap:.7rem;transition:border-color .2s,transform .2s;text-decoration:none;color:inherit}
-  .card:hover{border-color:var(--violet);transform:translateY(-3px)}
-  .card .ico{font-size:2.2rem}
-  .card h2{font-size:1.35rem;font-weight:800}
-  .card p{color:var(--ink-dim);font-size:.97rem;line-height:1.55;flex:1}
-  .card .go{font-family:var(--mono);font-size:.85rem;color:var(--teal)}
-  .card.play:hover .go{color:var(--amber)}
-  .dash{margin-top:2rem;border:1px solid var(--line-soft);border-radius:16px;
-    padding:1.2rem 1.4rem;background:rgba(255,255,255,.025)}
-  .dash h3{font-family:var(--mono);font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;
-    color:var(--ink-faint);margin-bottom:.8rem}
-  .dash .row{display:flex;gap:1rem;flex-wrap:wrap}
-  .dash a{flex:1;min-width:13rem;display:flex;gap:.7rem;align-items:center;text-decoration:none;
-    color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:.7rem 1rem;
-    font-size:.92rem;transition:border-color .2s,color .2s}
-  .dash a:hover{border-color:var(--teal);color:var(--teal)}
-  .dash a .k{font-family:var(--mono);font-size:.8rem;color:var(--ink-faint)}
-  .dash a:hover .k{color:var(--teal)}
-  .note{margin-top:1.6rem;text-align:center;color:var(--ink-faint);font-size:.9rem;line-height:1.6}
-  .note code{font-family:var(--mono);color:var(--violet)}
-  footer{margin-top:2.4rem;text-align:center;font-family:var(--mono);font-size:.75rem;color:var(--ink-faint)}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>penguin-forge</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="redesign/landings-scroll.css">
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      height: 100vh; width: 100vw;
+      background: #070d18;
+      overflow: hidden;
+      font-family: 'Manrope', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    /* Outer stage: full viewport, anchors the fixed-size landing to the
+       top so width-fit scaling reveals the page top-down. */
+    #stage {
+      position: fixed; inset: 0;
+      overflow: hidden;
+    }
+    /* The landing renders at its native 1440×900. JS sets a width-fit
+       scale on every resize so the page always fills the viewport edge to
+       edge with no side bars. Anything that doesn't fit vertically is
+       reached via the LandingScrollFade's internal scroll. */
+    #landing-fixed {
+      width: 1440px; height: 900px;
+      transform-origin: top left;
+      position: absolute;
+      top: 0; left: 0;
+      will-change: transform;
+    }
+  </style>
+
+  <!-- React vendored locally (no CDN) — the page runs fully offline. -->
+  <script src="vendor/react.production.min.js"></script>
+  <script src="vendor/react-dom.production.min.js"></script>
 </head>
 <body>
-  <div class="frame">
-    <div class="hero">
-      <div class="peng">🐧</div>
-      <h1>penguin-forge</h1>
-      <p class="tag">A multiplayer penguin world running on a <b>from-scratch</b>
-        HTTP/WebSocket framework — built only on Node's <code style="font-family:var(--mono)">net</code> module,
-        zero dependencies. The framework's own dashboards are the game's live control room.</p>
+  <template id="__bundler_thumbnail">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+      <rect width="100" height="100" fill="#070d18" />
+      <circle cx="50" cy="50" r="20" fill="#ffb84e" />
+      <path d="M 50 38 C 60 38 62 44 62 52 C 62 60 56 64 50 64 C 44 64 38 60 38 52 C 38 44 40 38 50 38 Z" fill="#3b82f6" />
+      <ellipse cx="50" cy="54" rx="6" ry="8" fill="#fff" />
+      <circle cx="47" cy="48" r="1.5" fill="#16181f" />
+      <circle cx="53" cy="48" r="1.5" fill="#16181f" />
+      <text x="50" y="86" text-anchor="middle" font-family="ui-monospace, monospace" font-size="7" fill="#ffb84e" font-weight="700">penguin-forge</text>
+    </svg>
+  </template>
+
+  <div id="stage">
+    <div id="landing-fixed">
+      <div id="root"></div>
     </div>
-
-    <div class="grid">
-      <a class="card play" href="/play">
-        <div class="ico">🎮</div>
-        <h2>Play the world</h2>
-        <p>Pick a name, waddle around as a penguin, hop between rooms, chat, and
-          play arcade mini-games — live, with everyone in every tab at once.
-          Open it in a few tabs to see real-time multiplayer.</p>
-        <span class="go">Enter the world ▸</span>
-      </a>
-      <a class="card" href="/forge">
-        <div class="ico">⚙️</div>
-        <h2>The framework</h2>
-        <p>fs-forge: the creative HTTP/1.1 + WebSocket framework powering all of
-          this. Filesystem routing, a tagged-template DSL, a live API console,
-          hot reload, and an in-browser route builder.</p>
-        <span class="go">Open the showcase ▸</span>
-      </a>
-    </div>
-
-    <p class="note">Best demo: open <code>/play</code> and <code>/_data</code> side by side —
-      join the world in one, watch the penguin appear in the roster in the other,
-      then walk between rooms and watch its <code>room</code> update live.</p>
-
-    <footer>penguin-forge · fs-forge + penguin-world · Full Stack Engineering · Reichman University · 2026</footer>
   </div>
+
+  <!-- palettes + components used by LandingScrollFade. Pre-compiled from JSX
+       to plain JS at build time (see redesign/*.jsx for source), so no
+       in-browser Babel and no CDN are needed. -->
+  <script src="redesign/palettes.js"></script>
+  <script src="redesign/penguin.js"></script>
+  <script src="redesign/rooms-outside.js"></script>
+  <script src="redesign/landings.js"></script>
+  <script src="redesign/landings-scroll.js"></script>
+  <script src="redesign/app.js"></script>
 </body>
 </html>

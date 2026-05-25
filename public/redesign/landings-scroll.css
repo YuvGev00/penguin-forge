@@ -1,0 +1,121 @@
+/* Polish stylesheet for Landing C / D — kept in a separate file so the
+   :hover, keyframes, and other things React inline styles can't express
+   live somewhere sane. Scoped via `.pf` ancestor to avoid leaking. */
+
+/* status-light pulse */
+@keyframes pf-pulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(107,255,176,0.7); }
+  50%      { box-shadow: 0 0 18px rgba(107,255,176,1.0); }
+}
+.pf-pulse { animation: pf-pulse 1.8s ease-in-out infinite; }
+
+/* aurora ribbon shimmer — slow horizontal drift */
+@keyframes pf-aurora {
+  0%   { transform: translateX(-30px); opacity: 0.55; }
+  50%  { transform: translateX(30px);  opacity: 0.95; }
+  100% { transform: translateX(-30px); opacity: 0.55; }
+}
+.pf-aurora { animation: pf-aurora 6s ease-in-out infinite; }
+
+/* gentle snow drift across the hero card */
+@keyframes pf-drift {
+  0%   { transform: translate(0,0); }
+  100% { transform: translate(-40px, 30px); }
+}
+
+/* CTA hover */
+.pf-cta-primary {
+  position: relative; transition: transform .18s ease, box-shadow .18s ease;
+  overflow: hidden;
+}
+.pf-cta-primary::before {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,0.35) 50%, transparent 65%);
+  transform: translateX(-100%); transition: transform .6s ease;
+}
+.pf-cta-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 36px rgba(255,140,40,0.55);
+}
+.pf-cta-primary:hover::before { transform: translateX(100%); }
+
+.pf-cta-secondary {
+  transition: background .18s ease, border-color .18s ease, transform .18s ease;
+}
+.pf-cta-secondary:hover {
+  background: rgba(255,255,255,0.10);
+  border-color: rgba(107,255,176,0.45);
+  transform: translateY(-1px);
+}
+
+.pf-cta-ghost {
+  transition: background .18s ease, color .18s ease, border-color .18s ease;
+}
+.pf-cta-ghost:hover {
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+  border-color: rgba(255,255,255,0.25);
+}
+
+/* nav link hover */
+.pf-nav-link {
+  transition: color .15s ease, background .15s ease, border-color .15s ease;
+}
+.pf-nav-link:hover {
+  color: #fff;
+  background: rgba(255,184,78,0.10);
+  border-color: rgba(255,184,78,0.35);
+}
+
+/* progress pill — slide highlight between WORLD and CONSOLE */
+.pf-pill {
+  position: relative; display: flex; align-items: center; gap: 0;
+  padding: 4px; border-radius: 999px;
+  background: rgba(7,13,24,0.65); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.1);
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 10.5px; letter-spacing: 0.18em; font-weight: 700;
+}
+.pf-pill > .pf-pill-thumb {
+  position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(255,184,78,0.85), rgba(255,138,61,0.85));
+  box-shadow: 0 4px 14px rgba(255,140,40,0.4);
+  transition: transform .35s cubic-bezier(0.4, 0.0, 0.2, 1),
+              background .35s ease, box-shadow .35s ease;
+}
+.pf-pill[data-active="console"] > .pf-pill-thumb {
+  transform: translateX(100%);
+  background: linear-gradient(135deg, rgba(107,255,176,0.85), rgba(58,180,124,0.85));
+  box-shadow: 0 4px 14px rgba(60,200,120,0.35);
+}
+.pf-pill > .pf-pill-seg {
+  position: relative; z-index: 1; padding: 8px 18px;
+  color: rgba(255,255,255,0.55); cursor: pointer;
+  transition: color .25s ease;
+  background: transparent; border: 0; font: inherit;
+}
+.pf-pill[data-active="world"]   > .pf-pill-seg:nth-of-type(1),
+.pf-pill[data-active="console"] > .pf-pill-seg:nth-of-type(2) { color: #2a1500; }
+.pf-pill[data-active="console"] > .pf-pill-seg:nth-of-type(2) { color: #0a1f12; }
+
+/* tiny floating snow over hero card (decorative) */
+.pf-snow-layer {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0.5;
+  background-image:
+    radial-gradient(1.5px 1.5px at 24px 18px, rgba(255,255,255,0.9), transparent 60%),
+    radial-gradient(1px   1px   at 96px 64px, rgba(255,255,255,0.7), transparent 60%),
+    radial-gradient(1.5px 1.5px at 160px 12px, rgba(255,255,255,0.8), transparent 60%),
+    radial-gradient(1px   1px   at 220px 48px, rgba(255,255,255,0.6), transparent 60%),
+    radial-gradient(1.2px 1.2px at 320px 90px, rgba(255,255,255,0.7), transparent 60%);
+  background-size: 380px 130px;
+  animation: pf-drift 12s linear infinite;
+}
+
+/* terminal cursor blink */
+@keyframes pf-blink { 0%,49% { opacity: 1 } 50%,100% { opacity: 0 } }
+.pf-cursor { animation: pf-blink 1s steps(2) infinite; }
+
+/* live ticker line */
+@keyframes pf-tick { 0% { opacity: 0; transform: translateY(4px); } 30% { opacity: 1; transform: translateY(0); } 100% { opacity: 1; transform: translateY(0); } }
+.pf-tick { animation: pf-tick 1.2s ease-out both; }
