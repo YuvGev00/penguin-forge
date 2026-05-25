@@ -12,7 +12,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/smoke.js"
+    "test": "node test/framework.test.js && node test/smoke.js",
+    "test:framework": "node test/framework.test.js",
+    "test:game": "node test/smoke.js"
   },
   "engines": {
     "node": ">=16"

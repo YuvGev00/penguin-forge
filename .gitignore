@@ -4,5 +4,6 @@ ruvector.db
 .DS_Store
 # runtime database — seeded from the committed data.seed.json
 data.json
-# isolated db the smoke suite uses, kept out of git
+# isolated dbs the test suites use, kept out of git
 test/.smoke-db.json
+test/.framework-db.json
