@@ -27,6 +27,11 @@ function fileToPattern(relFile) {
   const regexParts = [];
 
   const displaySegments = [];
+  // Per-segment specificity, left-to-right: literal (2) > :param (1) >
+  // *catchall (0). Used to order routes so a literal segment always beats a
+  // same-length param segment (e.g. /api/users/new before /api/users/:id),
+  // independent of filesystem walk order.
+  const kinds = [];
   for (const seg of segments) {
     const catchAll = seg.match(/^\[\.\.\.(.+)\]$/);
     const param = seg.match(/^\[(.+)\]$/);
@@ -34,23 +39,43 @@ function fileToPattern(relFile) {
       paramNames.push(catchAll[1]);
       regexParts.push('(.+)'); // greedy: consumes the rest of the path
       displaySegments.push('*' + catchAll[1]);
+      kinds.push(0);
     } else if (param) {
       paramNames.push(param[1]);
       regexParts.push('([^/]+)');
       displaySegments.push(':' + param[1]);
+      kinds.push(1);
     } else {
       regexParts.push(escapeRegex(seg));
       displaySegments.push(seg);
+      kinds.push(2);
     }
   }
 
   const pathname = '/' + displaySegments.join('/');
   const regex = new RegExp('^/' + regexParts.join('/') + '/?$');
-  return { pathname: pathname === '/' ? '/' : pathname, regex, paramNames };
+  return { pathname: pathname === '/' ? '/' : pathname, regex, paramNames, kinds };
 }
 
 function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Compile an Express-style URL pattern (e.g. '/api/users/:id', '/files/*path')
+// into the same { pathname, regex, paramNames, kinds } shape fileToPattern
+// produces, by translating it to the file-style tokens and reusing that one
+// compiler. Keeps programmatic and filesystem routes on identical matching.
+//   :id    -> [id]      (single segment param)
+//   *rest  -> [...rest] (catch-all; bare '*' becomes catch-all 'wild')
+function patternToRegex(urlPattern) {
+  const segments = String(urlPattern).split('/').filter(Boolean);
+  const fileStyle = segments.map((seg) => {
+    if (seg.startsWith(':')) return `[${seg.slice(1)}]`;
+    if (seg.startsWith('*')) return `[...${seg.slice(1) || 'wild'}]`;
+    return seg;
+  });
+  // fileToPattern expects a relative file path; '.js' is stripped there.
+  return fileToPattern(fileStyle.join('/') + '.js');
 }
 
 // Recursively collect every .js file path relative to routesDir.
@@ -77,18 +102,40 @@ function loadRouteModule(absFile) {
   return mod;
 }
 
+// Order by specificity so the most specific route wins when several match.
+// 1) More path segments first (a longer route is more specific).
+// 2) Then compare segment-by-segment: literal (2) beats :param (1) beats
+//    *catchall (0) — so /api/users/new is tried before /api/users/:id even
+//    though they're the same length. Independent of fs walk order.
+// 3) Finally fall back to longer display path (stable tie-break).
+function bySpecificity(a, b) {
+  if (b.kinds.length !== a.kinds.length) return b.kinds.length - a.kinds.length;
+  for (let i = 0; i < a.kinds.length; i++) {
+    if (a.kinds[i] !== b.kinds[i]) return b.kinds[i] - a.kinds[i];
+  }
+  return b.pathname.length - a.pathname.length;
+}
+
 function createFsRouter(routesDir) {
   const root = path.resolve(routesDir);
-  let table = [];
+  let table = [];          // file routes (rebuilt by walking routes/)
+  const programmatic = []; // app.get/app.post routes (survive rebuilds)
+  let combined = [];       // table + programmatic, sorted by specificity
+
+  // Recompute the merged, specificity-sorted view that match()/list() read.
+  // Called after a rebuild or an addRoute so the hot match path never sorts.
+  function recombine() {
+    combined = table.concat(programmatic).sort(bySpecificity);
+  }
 
   function rebuild() {
     const prev = new Map(table.map((r) => [r.file, r]));
     const next = [];
     for (const rel of walk(root)) {
       const abs = path.join(root, rel);
-      const { pathname, regex, paramNames } = fileToPattern(rel);
+      const { pathname, regex, paramNames, kinds } = fileToPattern(rel);
       try {
-        next.push({ pathname, regex, paramNames, file: abs, handlers: loadRouteModule(abs) });
+        next.push({ pathname, regex, paramNames, kinds, file: abs, source: 'file', handlers: loadRouteModule(abs) });
       } catch (err) {
         // A mid-save syntax error (or empty file from an editor's atomic
         // write) shouldn't make a working route vanish — keep the last
@@ -104,14 +151,39 @@ function createFsRouter(routesDir) {
         }
       }
     }
-    // Longer literal paths first so /api/users/new beats /api/users/:id.
-    next.sort((a, b) => b.pathname.length - a.pathname.length);
     table = next;
+    // Programmatic routes are NOT touched by a rebuild (it only rewalks
+    // routes/) — re-merge them back into the lookup view.
+    recombine();
   }
 
-  // Resolve a request path to { handlers, params } or null.
+  // Register a route imperatively (the Express-style facade over this same
+  // router). Builds an entry of the identical shape file routes produce, so
+  // dispatch.js handles it with no special-casing. Multiple verbs on one path
+  // merge into a single entry's handler map, exactly like an http`` file.
+  function addRoute(method, urlPattern, handler, opts = {}) {
+    const M = String(method).toUpperCase();
+    if (typeof handler !== 'function') {
+      throw new Error(`addRoute: ${M} ${urlPattern} handler must be a function`);
+    }
+    const { pathname, regex, paramNames, kinds } = patternToRegex(urlPattern);
+    let entry = programmatic.find((r) => r.pathname === pathname);
+    if (!entry) {
+      const handlers = {};
+      Object.defineProperty(handlers, '__forgeRoute', { value: true });
+      Object.defineProperty(handlers, '__hints', { value: {} });
+      entry = { pathname, regex, paramNames, kinds, file: null, source: 'code', handlers };
+      programmatic.push(entry);
+    }
+    entry.handlers[M] = handler;
+    if (opts.hint) entry.handlers.__hints[M] = opts.hint;
+    recombine();
+    return entry;
+  }
+
+  // Resolve a request path to { handlers, params, file } or null.
   function match(pathname) {
-    for (const route of table) {
+    for (const route of combined) {
       const m = route.regex.exec(pathname);
       if (!m) continue;
       const params = {};
@@ -128,12 +200,16 @@ function createFsRouter(routesDir) {
   }
 
   function list() {
-    return table.map((r) => ({
+    return combined.map((r) => ({
       path: r.pathname,
       // A WS route has a single `handler`, not method keys — label it 'WS'
       // so the route table / boot log reads honestly.
       methods: r.handlers.__forgeWs ? ['WS'] : Object.keys(r.handlers),
       hints: r.handlers.__hints || {},
+      // 'file' (declared by a routes/ file) vs 'code' (registered via the
+      // imperative app.get/app.post facade) — surfaced in /_routes so the UI
+      // can show which mechanism declared each route.
+      source: r.source || 'file',
     }));
   }
 
@@ -160,9 +236,10 @@ function createFsRouter(routesDir) {
     match,
     list,
     rebuild,
+    addRoute, // imperative app.get/app.post facade (see index.js)
     root, // absolute routes dir — used by the route builder to write files
     close: () => watcher && watcher.close(),
   };
 }
 
-module.exports = { createFsRouter, fileToPattern };
+module.exports = { createFsRouter, fileToPattern, patternToRegex };

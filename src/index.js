@@ -29,8 +29,34 @@ function forge(options = {}) {
   const dispatch = createDispatcher(router, staticMiddleware, inspector);
   const server = createNetServer(dispatch, { inspector });
 
-  return {
+  // Imperative, Express-style route registration — a thin facade over the
+  // SAME filesystem router (router.addRoute). The primary mechanism is still
+  // the routes/ tree + http`` DSL; these verbs exist so the familiar
+  // app.get('/x', ctx => ...) form is available too. Handlers use the same
+  // single-ctx + descriptor contract as DSL handlers (return json()/send()/…).
+  //   forge({...}).get('/api/ping', () => json({ pong: true })).listen(4300)
+  const app = {
     router,
+    get(path, handler, opts) {
+      router.addRoute('GET', path, handler, opts);
+      return this;
+    },
+    post(path, handler, opts) {
+      router.addRoute('POST', path, handler, opts);
+      return this;
+    },
+    put(path, handler, opts) {
+      router.addRoute('PUT', path, handler, opts);
+      return this;
+    },
+    delete(path, handler, opts) {
+      router.addRoute('DELETE', path, handler, opts);
+      return this;
+    },
+    patch(path, handler, opts) {
+      router.addRoute('PATCH', path, handler, opts);
+      return this;
+    },
     listen(port, callback) {
       server.listen(port, () => {
         console.log(`[fs-forge] listening on http://localhost:${port}`);
@@ -49,9 +75,13 @@ function forge(options = {}) {
     },
     close() {
       router.close();
+      // Tear down live SSE / WebSocket sockets first — they disable their own
+      // timeouts, so server.close() alone would wait on them forever.
+      if (server.destroyOpenSockets) server.destroyOpenSockets();
       server.close();
     },
   };
+  return app;
 }
 
 // Re-export the DSL so route files can `require('../src')` (or the package).

@@ -11,13 +11,20 @@
 
 const path = require('path');
 const forge = require('./src');
+const { json } = forge; // DSL helpers are re-exported off forge
 
 const PORT = process.env.PORT || 4300;
 
 forge({
   routesDir: path.join(__dirname, 'routes'),
   staticDir: path.join(__dirname, 'public'),
-}).listen(PORT, () => {
+})
+  // Most routes are declared by files under routes/ (the primary mechanism).
+  // This one shows the framework ALSO supports the familiar imperative API —
+  // app.get(path, ctx => descriptor) — registered onto the very same router.
+  // It appears in /_routes (tagged source:"code") and is runnable from /forge.
+  .get('/api/ping', () => json({ pong: true, at: Date.now() }))
+  .listen(PORT, () => {
   console.log(`\n  🐧  penguin-forge — open http://localhost:${PORT}/ in a few tabs`);
   console.log(`      roster  → http://localhost:${PORT}/_data`);
   console.log(`      wire    → http://localhost:${PORT}/_inspect\n`);

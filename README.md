@@ -115,6 +115,28 @@ module.exports = http`
 `;
 ```
 
+**Or the familiar way, if you prefer.** The filesystem + DSL is the primary
+mechanism, but the framework *also* exposes a classic Express-style imperative
+API — `app.get()` / `app.post()` / `app.put()` / `app.delete()` / `app.patch()`
+— as a thin facade over the **same** router. Two front doors, one engine:
+
+```js
+const forge = require('./src');
+const { json } = forge;
+
+forge({ staticDir: 'public' })
+  .get('/api/ping', () => json({ pong: true }))
+  .post('/api/echo', ({ body }) => json(body))
+  .listen(4300);
+```
+
+Handlers take the same single `ctx` and return the same `json()/send()/status()`
+descriptors as DSL handlers, so there is nothing new to learn. Routes registered
+this way show up in `/_routes` and the `/forge` route table tagged `code` (vs
+`file` for routes declared by a `routes/` file) — `server.js` registers
+`GET /api/ping` this way as a live demo. `curl localhost:4300/api/ping` →
+`{"pong":true}`.
+
 **Real WebSockets, from scratch.** `routes/world.js` is a `` ws`` `` route at
 `/world`. It performs the RFC 6455 handshake, decodes/encodes frames, and runs
 the authoritative 20 Hz game loop, broadcasting each room's state to the players
