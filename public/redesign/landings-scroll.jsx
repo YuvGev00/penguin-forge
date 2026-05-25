@@ -267,7 +267,7 @@ function ConsoleBlock({ onBackToWorld }) {
         <span style={{ color: '#ffb84e' }}>{'>'}</span>&nbsp; under the hood · /forge
       </div>
       <h2 style={{
-        fontSize: 40, fontWeight: 800, lineHeight: 1.04, letterSpacing: '-0.025em',
+        fontSize: 56, fontWeight: 800, lineHeight: 1.04, letterSpacing: '-0.025em',
         margin: 0, color: '#fff', maxWidth: 800,
       }}>
         The framework <span style={{ color: '#ffb84e', fontStyle: 'italic' }}>is</span> the dashboard.

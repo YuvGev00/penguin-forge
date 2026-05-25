@@ -521,7 +521,7 @@ function ConsoleBlock({
     }
   }, '>'), "\xA0 under the hood \xB7 /forge"), /*#__PURE__*/React.createElement("h2", {
     style: {
-      fontSize: 40,
+      fontSize: 56,
       fontWeight: 800,
       lineHeight: 1.04,
       letterSpacing: '-0.025em',

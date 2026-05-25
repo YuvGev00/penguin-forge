@@ -87,8 +87,29 @@ const snow = Array.from({ length: 34 }, () => ({
 
 function start() {
   myName = $('name').value.trim();
-  $('intro').style.display = 'none';
-  connect();
+
+  const wipe = $('cloudWipe');
+  if (!wipe) {
+    // Fallback: no transition element — behave as before.
+    $('intro').style.display = 'none';
+    connect();
+    return;
+  }
+
+  // Cloud curtain: the login screen is covered by closed clouds. On login we
+  // connect to the game (it renders at the base layer, hidden behind the
+  // clouds), then PART the clouds left/right like curtains and fade the intro
+  // out — revealing the live world between them. After the 1.6s part, the
+  // intro + cloud overlay are removed entirely.
+  const PART_MS = 1600; // matches the .bank transition duration
+  connect();                       // game starts rendering behind the clouds
+  $('intro').classList.add('opening'); // fade the form/plaza out
+  wipe.classList.add('part');      // slide the two banks apart
+
+  setTimeout(() => {
+    $('intro').style.display = 'none';
+    wipe.classList.add('gone');
+  }, PART_MS);
 }
 
 function connect() {
