@@ -111,7 +111,7 @@ function connect() {
     else if (m.t === 'kicked') showKicked(m.reason);
     else if (m.t === 'nameTaken') showNameTaken(m.name);
     else if (m.t === 'chatlog') addChatLine(m.name, m.text, m.room === 'broadcast');
-    else if (m.t === 'announce') showAnnounce(m.text);
+    else if (m.t === 'announce') { showAnnounce(m.text); addChatLine('admin', m.text, true); }
     else if (m.t === 'idlewarn') showIdleWarn(m.seconds || 60);
   };
   // Auto-reconnect on a dropped socket — UNLESS we were kicked or our name
@@ -168,6 +168,8 @@ const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ----- live chat stream (item: in-world chat) -----
+// Lines appear, linger a few seconds, then fade out and remove themselves —
+// so the stream doesn't sit permanently on screen. Admin lines linger longer.
 function addChatLine(name, text, isAdmin) {
   const box = document.getElementById('chatStream');
   if (!box) return;
@@ -176,6 +178,12 @@ function addChatLine(name, text, isAdmin) {
   line.innerHTML = '<b>' + _esc(isAdmin ? '📢 admin' : name) + ':</b> ' + _esc(text);
   box.appendChild(line);
   while (box.children.length > 8) box.removeChild(box.firstChild);
+  // Schedule fade-out: keep visible for a few seconds, then fade and remove.
+  const linger = isAdmin ? 9000 : 6000;
+  setTimeout(() => {
+    line.classList.add('fade');
+    setTimeout(() => { if (line.parentNode) line.parentNode.removeChild(line); }, 700);
+  }, linger);
 }
 
 // ----- admin broadcast banner (item: admin announce) -----
