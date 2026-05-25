@@ -56,13 +56,31 @@ function wire(playerId, text) {
   if (insp) insp.inbound(playerId, `GAME ${playerId} ${text}\r\n`, 'app');
 }
 
-// Broadcast a chat line to every watcher (the /forge chat panel). Dead
-// sockets are pruned lazily on their own close handler.
+// Send a JSON-stringified message to every connected in-world player.
+function broadcastToPlayers(line) {
+  for (const [, c] of clients) {
+    if (c.conn) { try { c.conn.send(line); } catch { /* pruned on close */ } }
+  }
+}
+
+// Broadcast a chat line to every watcher (the /forge panel) AND every in-world
+// player (so the game shows a live chat stream too). Dead sockets are pruned
+// on their own close handler.
 function broadcastChat(name, room, text) {
   const line = JSON.stringify({ t: 'chatlog', name, room, text, ts: Date.now() });
   for (const w of watchers) {
     try { w.send(line); } catch { /* pruned on close */ }
   }
+  broadcastToPlayers(line);
+}
+
+// An admin announcement from the /forge console: pops up for everyone in the
+// world and also appears in the /forge chat feed (as a chatlog from 'admin').
+function broadcastAnnounce(text) {
+  const announce = JSON.stringify({ t: 'announce', text, ts: Date.now() });
+  broadcastToPlayers(announce);
+  const log = JSON.stringify({ t: 'chatlog', name: 'admin', room: 'broadcast', text, ts: Date.now() });
+  for (const w of watchers) { try { w.send(log); } catch { /* */ } }
 }
 
 // Map a store row id (what /_data + the REST API expose) to the live game pid.
@@ -74,6 +92,37 @@ function pidForStoreId(storeId) {
   return null;
 }
 
+// Is a penguin name already in use by a LIVE player? Case-insensitive.
+// `exceptPid` lets a rename keep its own name (or change case) without
+// colliding with itself.
+function nameTaken(name, exceptPid) {
+  const wanted = String(name || '').trim().toLowerCase();
+  if (!wanted) return false;
+  for (const [pid, p] of world.players) {
+    if (pid === exceptPid) continue;
+    if (String(p.name || '').trim().toLowerCase() === wanted) return true;
+  }
+  return false;
+}
+
+// Remove a penguin by its game pid: notify + close its socket (if any),
+// drop its roster row, and remove it from the world. Shared by the REST
+// kick (mapped from a store id) and the idle-timeout sweep.
+function kickPid(pid, reason) {
+  const c = clients.get(pid);
+  if (!c) return false;
+  const msg = String(reason || 'You were kicked from the world.');
+  if (c.conn) {
+    try { c.conn.send(JSON.stringify({ t: 'kicked', reason: msg })); } catch { /* */ }
+    try { c.conn.close(); } catch { /* */ }
+  }
+  if (c.storeId != null) penguins.remove(c.storeId);
+  clients.delete(pid);
+  world.removePlayer(pid);
+  wire(pid, `kicked (${msg})`);
+  return true;
+}
+
 // ---- The control API the REST routes call (via game/hub.js) --------------
 hub.setApi({
   // Spawn a LIVE penguin with no socket. It exists in world.players (so it
@@ -82,6 +131,7 @@ hub.setApi({
   spawn(name) {
     const clean = String(name || '').slice(0, 24).trim();
     if (!clean) return null;
+    if (nameTaken(clean)) return { error: 'name-taken' };
     const id = 'p' + nextId++;
     world.addPlayer(id, clean);
     const room = world.roomOf(id);
@@ -96,6 +146,7 @@ hub.setApi({
     if (!pid) return null;
     const clean = String(name || '').slice(0, 24).trim();
     if (!clean) return null;
+    if (nameTaken(clean, pid)) return { error: 'name-taken' };
     const p = world.players.get(pid);
     if (p) p.name = clean;
     const row = penguins.update(Number(storeId), { name: clean });
@@ -106,23 +157,26 @@ hub.setApi({
   kick(storeId, reason) {
     const pid = pidForStoreId(storeId);
     if (!pid) return false;
-    const c = clients.get(pid);
-    const msg = String(reason || 'You were kicked from the world.');
-    if (c && c.conn) {
-      try { c.conn.send(JSON.stringify({ t: 'kicked', reason: msg })); } catch { /* */ }
-      try { c.conn.close(); } catch { /* */ }
-    }
-    if (c && c.storeId != null) penguins.remove(c.storeId);
-    clients.delete(pid);
-    world.removePlayer(pid);
-    wire(pid, `kicked via REST (${msg})`);
-    return true;
+    return kickPid(pid, reason || 'You were kicked from the world.');
   },
 
   list() {
     return penguins.all();
   },
 });
+
+// ---- Idle timeout -------------------------------------------------------
+// A player idle this long is warned, then kicked one minute later.
+// Defaults: warn at 9 min, kick at 10 min. Overridable via env (seconds) for
+// testing, e.g. PF_IDLE_WARN_S=3 PF_IDLE_KICK_S=4.
+const IDLE_WARN_MS = (Number(process.env.PF_IDLE_WARN_S) || 9 * 60) * 1000;
+const IDLE_KICK_MS = (Number(process.env.PF_IDLE_KICK_S) || 10 * 60) * 1000;
+
+// Mark a client active now (any message from them counts as activity).
+function touch(pid) {
+  const c = clients.get(pid);
+  if (c) { c.lastActive = Date.now(); c.idleWarned = false; }
+}
 
 // ---- The authoritative loop (20 Hz) --------------------------------------
 // Guarded against double-firing if fs.watch hot-reloads this route file.
@@ -147,6 +201,22 @@ globalThis.__pfWorldLoop = setInterval(() => {
         wire(pid, `→ entered ${room}`);
       }
     }
+
+    // Idle timeout: warn AFK players at 9 min, kick at 10 min. Only applies to
+    // connected players (REST-spawned conn-less penguins have no lastActive).
+    const idleKicks = [];
+    for (const [pid, c] of clients) {
+      if (!c.conn || c.lastActive == null) continue;
+      const idle = now - c.lastActive;
+      if (idle >= IDLE_KICK_MS) {
+        idleKicks.push(pid);
+      } else if (idle >= IDLE_WARN_MS && !c.idleWarned) {
+        c.idleWarned = true;
+        try { c.conn.send(JSON.stringify({ t: 'idlewarn', seconds: 60 })); } catch { /* */ }
+        wire(pid, 'idle 9 min — warned');
+      }
+    }
+    for (const pid of idleKicks) kickPid(pid, 'Kicked for being idle (10 minutes AFK).');
 
     if (!clients.size) return;
     // Build each active room's snapshot once; send to that room's members.
@@ -188,23 +258,27 @@ module.exports = ws`${(conn) => {
       return;
     }
 
-    if (m.t === 'say') {
-      // A watcher posting into the chat (no avatar). Broadcast to watchers and
-      // surface on the wire. (Not attached to a world penguin, so no bubble.)
-      const name = String(m.name || 'guest').slice(0, 24).trim() || 'guest';
-      const text = String(m.text || '').slice(0, 120).trim();
+    if (m.t === 'announce') {
+      // Admin broadcast from the /forge console. Pops up for everyone in the
+      // world; also shown in the /forge chat feed. No user name — it's "admin".
+      const text = String(m.text || '').slice(0, 200).trim();
       if (!text) return;
-      broadcastChat(name, 'forge', text);
-      wire('forge', `say "${name}": ${text}`);
+      broadcastAnnounce(text);
+      wire('admin', `announce: ${text}`);
       return;
     }
 
     if (m.t === 'join') {
       if (id) return; // already joined on this socket
+      const name = String(m.name || 'penguin').slice(0, 24).trim() || 'penguin';
+      // No two live penguins may share a name (case-insensitive).
+      if (nameTaken(name)) {
+        conn.send(JSON.stringify({ t: 'nameTaken', name }));
+        return; // don't reserve an id or add the penguin
+      }
       id = 'p' + nextId++;
-      clients.set(id, { conn, storeId: null, lastRoom: null });
+      clients.set(id, { conn, storeId: null, lastRoom: null, lastActive: Date.now(), idleWarned: false });
       conn.send(JSON.stringify({ t: 'hello', id }));
-      const name = String(m.name || 'penguin').slice(0, 24);
       world.addPlayer(id, name);
       const room = world.roomOf(id);
       const row = penguins.insert({ pid: id, name, room, joinedAt: Date.now() });
@@ -215,6 +289,9 @@ module.exports = ws`${(conn) => {
     }
 
     if (!id) return; // the rest require a joined penguin
+
+    // Any of these counts as activity → reset the idle timer.
+    touch(id);
 
     if (m.t === 'move') {
       world.setTarget(id, m.x, m.y); // positions stay in memory only
@@ -229,6 +306,8 @@ module.exports = ws`${(conn) => {
       const p = world.players.get(id);
       if (p && p.cabinet) arcade.input(p.cabinet, id, m);
     }
+    // {t:'active'} is a pure activity heartbeat (mouse/keyboard) — touch() above
+    // already handled it; no further action needed.
   });
 
   conn.on('close', () => {

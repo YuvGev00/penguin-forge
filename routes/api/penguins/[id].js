@@ -20,6 +20,9 @@ module.exports = http`
     const name = String(b.name || query.name || '').trim();
     if (!name) return status(400, json({ error: 'name required' }));
     const row = api.rename(params.id, name);
+    if (row && row.error === 'name-taken') {
+      return status(409, json({ error: 'name already in use', name }));
+    }
     if (!row) return status(404, json({ error: 'no live penguin with that id' }));
     return json(row);
   }}

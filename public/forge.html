@@ -321,11 +321,10 @@ routes/<br>
 //   DELETE /api/penguins/1      kick it (it gets a "kicked" notice)</pre>
           </div>
           <div class="wall">
-            <div class="wall-h"><span class="live"></span>💬 Live chat — the penguin world</div>
+            <div class="wall-h"><span class="live"></span>📢 Admin broadcast — to the whole world</div>
             <form class="composer" id="chatForm" onsubmit="return false">
-              <input id="chatWho" placeholder="your name" maxlength="24" />
-              <input id="chatWhat" placeholder="say something… (Enter to send)" maxlength="120" />
-              <button id="chatGo">Send</button>
+              <input id="chatWhat" placeholder="announce to everyone… (Enter to send)" maxlength="200" />
+              <button id="chatGo">Broadcast</button>
             </form>
             <div id="chatErr" class="post-err" style="display:none"></div>
             <div class="feed" id="chatFeed"></div>
@@ -383,7 +382,9 @@ routes/<br>
     async function loadRoutes() {
       const r = await fetch('/_routes');
       const { routes } = await r.json();
-      $('#routes').innerHTML = routes.map(rt => {
+      // The HTTP API console can't exercise WebSocket routes, so hide /world.
+      const httpRoutes = routes.filter(rt => !(rt.methods || []).includes('WS'));
+      $('#routes').innerHTML = httpRoutes.map(rt => {
         const methods = rt.methods.map(safeMethod).filter(Boolean);
         const data_p = esc((rt.path || '').replace(':id', '1'));
         const data_m = esc(methods[0] || 'GET');
@@ -475,20 +476,20 @@ routes/<br>
     $('#bodyName').addEventListener('keydown', e => e.key==='Enter' && send());
     loadRoutes();
 
-    // ----- Live chat (over the from-scratch WebSocket) -----------------
+    // ----- Admin broadcast (over the from-scratch WebSocket) -----------
     // This panel is a WATCHER on the penguin world's /world socket: it sees
-    // every chat line live (penguins typing in /play AND other watchers) and
-    // can post into the chat itself — but it spawns NO penguin avatar. It
-    // sends {t:'watch'} on open, renders incoming {t:'chatlog'}, and posts
-    // via {t:'say', name, text}. Same hand-written WebSocket the game uses.
+    // every chat line live (penguins typing in /play) — and, as the admin
+    // console, it can BROADCAST: sending posts {t:'announce', text}, which
+    // pops up for every penguin in the world. No user name (it's "admin").
+    // It sends {t:'watch'} on open and renders incoming {t:'chatlog'}.
     const chatFeed = $('#chatFeed');
-    const chatWho  = $('#chatWho');
     const chatWhat = $('#chatWhat');
     const chatErr  = $('#chatErr');
     let chatSock = null;
 
     function chatEmpty(){
-      chatFeed.innerHTML = '<div class="feed-empty">No chat yet — say hi, or '
+      chatFeed.innerHTML = '<div class="feed-empty">Live chat from the world appears here. '
+        + 'Type above to broadcast an announcement to every penguin, or '
         + '<a href="/play" target="_blank" style="color:#7fc7ff">enter the world</a>.</div>';
     }
     function addChat(name, room, text){
@@ -516,10 +517,9 @@ routes/<br>
       chatSock.onerror = () => {};
     }
     function sendChat(){
-      const who  = chatWho.value.trim() || 'guest';
       const what = chatWhat.value.trim();
       if (!what || !chatSock || chatSock.readyState !== 1) { chatWhat.focus(); return; }
-      chatSock.send(JSON.stringify({ t: 'say', name: who, text: what }));
+      chatSock.send(JSON.stringify({ t: 'announce', text: what }));
       chatWhat.value = '';
     }
     $('#chatGo').onclick = sendChat;

@@ -273,8 +273,6 @@ module.exports = `<!DOCTYPE html>
     if(item&&item.hints){
       if(item.hints.GET==='item')
         acts.push('<button class="btn get" data-act="get" data-id="'+r.id+'">GET</button>');
-      if(item.hints.PUT==='update')
-        acts.push('<button class="btn addf" data-act="addfield" data-id="'+r.id+'" title="Add a new field to this row (PUT)">+ field</button>');
       if(item.hints.DELETE==='remove')
         acts.push('<button class="btn del" data-act="del" data-id="'+r.id+'">DEL</button>');
     }
@@ -346,24 +344,6 @@ module.exports = `<!DOCTYPE html>
       const r=await fetch(itemUrl,{method:'DELETE'});
       setTimeout(()=>refreshRows(list,item,wrap,name),450);
       toast('DELETE → '+r.status,r.ok?'ok':'err');
-      return;
-    }
-    if(act==='addfield'){
-      // Add an arbitrary new field to this row. The route's PUT[update]
-      // merges any query field into the record, so this is generic — it
-      // works for users (age, email…), posts, or any future collection.
-      const field=prompt('New field name? (e.g. age, email, city)');
-      if(!field) return;
-      const key=field.trim();
-      if(!key || key==='id'){ toast('invalid field name','err'); return; }
-      const val=prompt('Value for "'+key+'"?');
-      if(val===null) return;
-      const url=itemUrl+'?'+encodeURIComponent(key)+'='+encodeURIComponent(val);
-      const r=await fetch(url,{method:'PUT'});
-      toast('PUT '+key+' → '+r.status, r.ok?'ok':'err');
-      await refreshRows(list,item,wrap,name);
-      const row=wrap.querySelector('tr[data-id="'+CSS.escape(id)+'"]');
-      if(row) row.classList.add('row-flash');
       return;
     }
   }

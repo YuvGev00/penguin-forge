@@ -92,6 +92,7 @@ function start() {
 }
 
 function connect() {
+  nameRejected = false; // a fresh connection attempt is always intentional
   ws = new WebSocket(`ws://${location.host}/world`);
   ws.onopen = () => {
     ws.send(JSON.stringify({ t: 'join', name: myName }));
@@ -108,10 +109,29 @@ function connect() {
     else if (m.t === 'snap') { prev = cur; prevAt = curAt; cur = m; curAt = performance.now(); }
     else if (m.t === 'cab') Game.handle(m.cab, m.ev);
     else if (m.t === 'kicked') showKicked(m.reason);
+    else if (m.t === 'nameTaken') showNameTaken(m.name);
+    else if (m.t === 'chatlog') addChatLine(m.name, m.text, m.room === 'broadcast');
+    else if (m.t === 'announce') showAnnounce(m.text);
+    else if (m.t === 'idlewarn') showIdleWarn(m.seconds || 60);
   };
-  // Auto-reconnect on a dropped socket — UNLESS we were kicked (a kick is
-  // intentional and must stick; otherwise we'd instantly rejoin).
-  ws.onclose = () => { if (!kicked) setTimeout(connect, 1000); };
+  // Auto-reconnect on a dropped socket — UNLESS we were kicked or our name
+  // was rejected (both are intentional; reconnecting would loop).
+  ws.onclose = () => { if (!kicked && !nameRejected) setTimeout(connect, 1000); };
+}
+
+// The chosen name is already in use by another live penguin. Don't reconnect;
+// send the user back to the intro to pick a different name.
+let nameRejected = false;
+function showNameTaken(name) {
+  nameRejected = true;
+  try { if (ws) ws.close(); } catch (e) {}
+  const intro = $('intro');
+  if (intro) intro.style.display = 'flex';
+  const err = $('nameErr');
+  if (err) err.textContent = '"' + (name || myName) + '" is already in the world — pick another.';
+  const inp = $('name');
+  if (inp) { inp.focus(); inp.select(); }
+  // nameRejected is reset inside connect() on the next submit.
 }
 
 // A penguin was removed by an admin (DELETE /api/penguins/:id). Show a
@@ -143,6 +163,73 @@ function showKicked(reason) {
     'border-radius:10px;padding:.55rem 1.1rem">Rejoin ▸</a>';
 }
 function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+
+const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ----- live chat stream (item: in-world chat) -----
+function addChatLine(name, text, isAdmin) {
+  const box = document.getElementById('chatStream');
+  if (!box) return;
+  const line = document.createElement('div');
+  line.className = 'line' + (isAdmin ? ' admin' : '');
+  line.innerHTML = '<b>' + _esc(isAdmin ? '📢 admin' : name) + ':</b> ' + _esc(text);
+  box.appendChild(line);
+  while (box.children.length > 8) box.removeChild(box.firstChild);
+}
+
+// ----- admin broadcast banner (item: admin announce) -----
+let _announceTimer = null;
+function showAnnounce(text) {
+  const el = document.getElementById('announceBanner');
+  if (!el) return;
+  el.textContent = '📢 ' + text;
+  el.classList.add('show');
+  clearTimeout(_announceTimer);
+  _announceTimer = setTimeout(() => el.classList.remove('show'), 6000);
+}
+
+// ----- idle warning + activity heartbeat (item: idle timeout) -----
+let _idleCountdown = null;
+function showIdleWarn(seconds) {
+  const el = document.getElementById('idleWarn');
+  if (!el) return;
+  let left = seconds;
+  const render = () => {
+    el.innerHTML =
+      '<div class="box"><h3>⏰ Still there?</h3>' +
+      '<p>You’ve been idle. You’ll be kicked in <span class="cd">' + left +
+      '</span>s.<br>Move or click to stay.</p>' +
+      '<button id="stayBtn">I’m still here</button></div>';
+    const b = document.getElementById('stayBtn');
+    if (b) b.onclick = () => { markActive(); hideIdleWarn(); };
+  };
+  render();
+  el.classList.add('show');
+  clearInterval(_idleCountdown);
+  _idleCountdown = setInterval(() => {
+    left -= 1;
+    if (left <= 0) { clearInterval(_idleCountdown); return; }
+    const cd = el.querySelector('.cd');
+    if (cd) cd.textContent = left;
+  }, 1000);
+}
+function hideIdleWarn() {
+  const el = document.getElementById('idleWarn');
+  if (el) el.classList.remove('show');
+  clearInterval(_idleCountdown);
+}
+
+// Tell the server we're active (resets the idle timer) and clear any warning.
+// Throttled so we don't flood the socket on every mousemove.
+let _lastActiveSent = 0;
+function markActive() {
+  const now = Date.now();
+  if (now - _lastActiveSent > 5000) { _lastActiveSent = now; send({ t: 'active' }); }
+  hideIdleWarn();
+}
+['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel'].forEach((ev) =>
+  window.addEventListener(ev, markActive, { passive: true }));
 
 canvas.addEventListener('click', (e) => {
   const r = canvas.getBoundingClientRect();

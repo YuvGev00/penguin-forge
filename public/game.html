@@ -42,6 +42,44 @@
     .chatbar input:focus { box-shadow: 0 0 0 3px #ffd966,
       0 8px 24px rgba(40,70,120,.3); }
 
+    /* live chat stream — bottom-left, newest at the bottom */
+    #chatStream { left: 18px; bottom: 70px; width: 300px; max-height: 190px;
+      overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end;
+      gap: 4px; pointer-events: none; background: transparent; }
+    #chatStream .line { background: rgba(26,39,64,.55); color: #fff;
+      align-self: flex-start; max-width: 100%; padding: .3rem .7rem;
+      border-radius: 12px; font-size: .82rem; line-height: 1.3;
+      word-break: break-word; }
+    #chatStream .line b { color: #ffd24a; font-weight: 700; }
+    #chatStream .line.admin { background: rgba(255,140,40,.85); }
+    #chatStream .line.admin b { color: #fff; }
+
+    /* admin broadcast banner — top center, auto-dismisses */
+    #announceBanner { position: absolute; top: 64px; left: 50%;
+      transform: translateX(-50%) translateY(-12px);
+      background: linear-gradient(135deg, #ffb02e, #ff8a3d); color: #4a2600;
+      font-weight: 800; font-size: 1rem; padding: .7rem 1.4rem;
+      border-radius: 14px; box-shadow: 0 10px 30px rgba(255,140,40,.5);
+      max-width: 70%; text-align: center; pointer-events: none;
+      opacity: 0; transition: opacity .3s, transform .3s; z-index: 8; }
+    #announceBanner.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* idle warning popup — center, with countdown */
+    #idleWarn { position: absolute; inset: 0; display: none;
+      align-items: center; justify-content: center; z-index: 9;
+      pointer-events: none; }
+    #idleWarn.show { display: flex; }
+    #idleWarn .box { background: rgba(7,10,20,.92); color: #eaf0ff;
+      border: 1px solid rgba(255,180,80,.5); border-radius: 18px;
+      padding: 1.6rem 2rem; text-align: center; pointer-events: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+    #idleWarn .box h3 { margin: 0 0 .4rem; font-size: 1.3rem; }
+    #idleWarn .box p { margin: 0 0 1rem; color: #cdd6e8; }
+    #idleWarn .box .cd { color: #ffb84e; font-weight: 800; }
+    #idleWarn .box button { font: inherit; font-weight: 800; cursor: pointer;
+      border: 0; border-radius: 12px; padding: .6rem 1.6rem; color: #3a2000;
+      background: linear-gradient(135deg, #ffb84e, #ff8a3d); }
+
     /* contextual hint pill — JS-driven, single at a time */
     #ctxHint { position: absolute; bottom: 72px; left: 50%;
       transform: translateX(-50%); font-size: .76rem; font-weight: 600;
@@ -331,6 +369,12 @@
     <canvas id="c" width="1200" height="720"></canvas>
     <div class="hud room" id="roomName">—</div>
     <div class="hud pop" id="pop"></div>
+    <!-- live chat stream (latest lines, newest at bottom) -->
+    <div class="hud" id="chatStream"></div>
+    <!-- admin broadcast banner -->
+    <div id="announceBanner"></div>
+    <!-- idle warning popup -->
+    <div id="idleWarn"></div>
     <div id="ctxHint"></div>
     <div id="soloNotice">
       No one else is online — invite a friend!
@@ -458,9 +502,9 @@
   </div>
   <div class="tag">hand-rolled net HTTP/WebSocket framework</div>
 
-  <script src="/penguin.js?v=6"></script>
-  <script src="/books.js?v=6"></script>
-  <script src="/game.js?v=6"></script>
-  <script src="/app.js?v=6"></script>
+  <script src="/penguin.js?v=7"></script>
+  <script src="/books.js?v=7"></script>
+  <script src="/game.js?v=7"></script>
+  <script src="/app.js?v=7"></script>
 </body>
 </html>

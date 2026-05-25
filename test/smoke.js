@@ -183,16 +183,25 @@ async function until(fn, ms = 2000) {
     const chatlogSeen = await until(() => watch.frames.some((f) => /"t":"chatlog".*chatlog-test-line/.test(f)));
     check('watcher receives {t:"chatlog"} when a player chats', chatlogSeen);
 
-    // 9. Watcher can post via {t:'say'} (broadcast to other watchers).
-    const watch2 = wsClient();
-    await until(() => watch2.ready);
-    watch2.send({ t: 'watch' });
-    await wait(100);
-    watch.send({ t: 'say', name: 'Guest', text: 'say-test-line' });
-    const saySeen = await until(() => watch2.frames.some((f) => /"t":"chatlog".*say-test-line/.test(f)));
-    check('watcher {t:"say"} broadcasts to other watchers', saySeen);
+    // 9. Admin announce from a watcher pops up for in-world players AND echoes
+    //    into the watcher feed (as an 'admin' chatlog).
+    watch.send({ t: 'announce', text: 'announce-test-line' });
+    const playerGotAnnounce = await until(() =>
+      watcherObserver.frames.some((f) => /"t":"announce".*announce-test-line/.test(f)));
+    check('admin {t:"announce"} pops up for in-world players', playerGotAnnounce);
+    const watcherGotAdminLog = await until(() =>
+      watch.frames.some((f) => /"t":"chatlog".*"name":"admin".*announce-test-line/.test(f)));
+    check('admin announce echoes into the watcher chat feed', watcherGotAdminLog);
 
-    watcherObserver.sock.end(); victim.sock.end(); watch.sock.end(); watch2.sock.end();
+    // 10. Duplicate name: a second join with a taken name (case-insensitive) is
+    //     rejected with {t:'nameTaken'} and adds no penguin.
+    const dup = wsClient();
+    await until(() => dup.ready);
+    dup.send({ t: 'join', name: 'OBSERVER' }); // 'Observer' already joined above
+    const dupRejected = await until(() => dup.frames.some((f) => /"t":"nameTaken"/.test(f)));
+    check('duplicate name (case-insensitive) is rejected', dupRejected);
+
+    watcherObserver.sock.end(); victim.sock.end(); watch.sock.end(); dup.sock.end();
     b.sock.end();
     console.log(`\n${passed} assertions passed`);
     app.close();

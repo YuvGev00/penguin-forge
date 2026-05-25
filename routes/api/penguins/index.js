@@ -26,6 +26,9 @@ module.exports = http`
     const api = hub.getApi();
     if (!api) return status(503, json({ error: 'world not ready' }));
     const row = api.spawn(name);
+    if (row && row.error === 'name-taken') {
+      return status(409, json({ error: 'name already in use', name }));
+    }
     if (!row) return status(400, json({ error: 'could not spawn penguin' }));
     return created(row);
   }}
