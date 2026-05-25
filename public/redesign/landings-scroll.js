@@ -704,7 +704,7 @@ function ConsoleBlock({
       gap: 12
     }
   }, /*#__PURE__*/React.createElement("a", {
-    href: "https://github.com",
+    href: "https://github.com/YuvGev00/penguin-forge",
     target: "_blank",
     rel: "noreferrer",
     className: "pf-cta-primary",

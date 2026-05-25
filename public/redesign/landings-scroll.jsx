@@ -356,7 +356,7 @@ function ConsoleBlock({ onBackToWorld }) {
       <div style={{
         marginTop: 18, display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 12,
       }}>
-        <a href="https://github.com" target="_blank" rel="noreferrer" className="pf-cta-primary" style={{
+        <a href="https://github.com/YuvGev00/penguin-forge" target="_blank" rel="noreferrer" className="pf-cta-primary" style={{
           display: 'flex', flexDirection: 'column', gap: 2, padding: '12px 16px',
           borderRadius: 12, textDecoration: 'none', color: '#3a2000',
           background: 'linear-gradient(135deg, #ffb84e, #ff8a3d)',
