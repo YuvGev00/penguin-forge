@@ -1,19 +1,15 @@
 'use strict';
 
-// The /_data page — a framework-GENERATED data explorer.
+// The /_data page — Data Explorer. Forge-console redesign (drop-in from
+// the Claude Design bundle). Served as a string by the dispatcher
+// (framework UI, not a route). It reads /_routes, groups collection
+// routes by their list/item/update/remove hints, and renders an inline-
+// editable table per collection over the /_data/events SSE stream.
+// All fetch paths / handlers preserved; a self-disabling preview mock
+// only fires when no live /_routes exists.
 //
-// It reads /_routes (the live introspection endpoint), groups routes that
-// have a `list` hint together with the sibling route that has `item` /
-// `update` / `remove` hints on its :id path, and renders a table per
-// collection with inline action buttons whose set is derived from the
-// available hints. There is no hardcoded knowledge of "users" or any other
-// resource — drop a new pair of routes with the right hints and the
-// explorer picks them up on the next refresh.
-//
-// Pair this view with /_inspect: every action you take here flies past
-// the Wire Inspector as real HTTP bytes.
-//
-// NOTE: this file is a JS template literal so it must contain NO ${...}.
+// NOTE: this file is a JS template literal — backslashes are doubled on
+// embed so the literal emits single backslashes to the browser.
 
 module.exports = `<!DOCTYPE html>
 <html lang="en">
@@ -21,155 +17,666 @@ module.exports = `<!DOCTYPE html>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>fs-forge · data explorer</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- Fonts vendored locally (public/vendor/) — no CDN, works fully offline. -->
+<link href="/vendor/fonts.css" rel="stylesheet">
 <style>
+  /* ============================================================
+     FORGE CONSOLE — shared visual system
+     ============================================================ */
   :root{
     color-scheme:dark;
-    --bg:#070a14; --ink:#eaf0ff; --ink-dim:#9aa6cc; --ink-faint:#6b769c;
-    --line:rgba(255,255,255,.10); --line-soft:rgba(255,255,255,.06);
-    --glass:rgba(255,255,255,.05);
-    --violet:#a78bff; --teal:#5fe3c8; --pink:#ff6fae; --amber:#ffce73;
-    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
-    --sans:"Manrope",system-ui,sans-serif;
+    --bg:#060b15;
+    --bg-2:#0d1524;
+    --bg-3:#131c2e;
+    --line:rgba(255,255,255,.07);
+    --line-2:rgba(255,255,255,.14);
+    --ink:#eef2fc;
+    --ink-dim:#95a1c0;
+    --ink-faint:#5d6885;
+    --ink-ghost:#3a4360;
+
+    --amber:#ffb84e;
+    --amber-hot:#ff8a3d;
+    --mint:#6bffb0;
+    --coral:#ff6a8e;
+    --violet:#9a6bff;
+    --sky:#7cb8ff;
+
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:"Manrope",system-ui,-apple-system,Segoe UI,sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:var(--sans);color:var(--ink);background:var(--bg);
-    min-height:100vh;-webkit-font-smoothing:antialiased;
-    position:relative;overflow-x:hidden}
-  body::before{content:"";position:fixed;inset:-30%;z-index:0;
-    pointer-events:none;background:
-      radial-gradient(38% 38% at 16% 14%, rgba(120,90,255,.28), transparent 70%),
-      radial-gradient(34% 34% at 84% 22%, rgba(0,210,185,.20), transparent 70%),
-      radial-gradient(44% 44% at 60% 96%, rgba(255,90,170,.14), transparent 70%);
-    filter:blur(46px);animation:drift 26s ease-in-out infinite alternate}
-  @keyframes drift{0%{transform:translate3d(0,0,0) scale(1)}
-    100%{transform:translate3d(-2%,2%,0) scale(1.06)}}
+  html,body{background:var(--bg);color:var(--ink)}
+  ::selection{background:rgba(255,184,78,.3);color:var(--ink)}
+  ::-moz-selection{background:rgba(255,184,78,.3);color:var(--ink)}
+  :focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:4px}
+  *::-webkit-scrollbar{width:9px;height:9px}
+  *::-webkit-scrollbar-track{background:transparent}
+  *::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:99px}
+  *::-webkit-scrollbar-thumb:hover{background:rgba(255,184,78,.3)}
+  body{
+    font-family:var(--sans);min-height:100vh;
+    -webkit-font-smoothing:antialiased;line-height:1.55;
+    font-variant-numeric:tabular-nums;
+    background:
+      linear-gradient(180deg,var(--mint) 0 2px,transparent 2px 100%),
+      repeating-linear-gradient(0deg,transparent 0 39px,rgba(255,255,255,.022) 39px 40px),
+      radial-gradient(60% 50% at 50% -10%,rgba(107,255,176,.05),transparent 70%),
+      var(--bg);
+  }
+  /* Ambient drifting glow — extremely subtle, makes the page feel alive
+     without being noisy. Sits behind everything via z-index:0. */
+  body::before{
+    content:"";position:fixed;inset:-20%;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(28% 28% at 12% 18%,rgba(107,255,176,.06),transparent 70%),
+      radial-gradient(32% 32% at 88% 32%,rgba(255,184,78,.04),transparent 70%);
+    filter:blur(40px);animation:ambient 30s ease-in-out infinite alternate;
+  }
+  @keyframes ambient{
+    0%{transform:translate3d(0,0,0) scale(1)}
+    100%{transform:translate3d(-2%,1.5%,0) scale(1.05)}
+  }
   @media(prefers-reduced-motion:reduce){body::before{animation:none}}
-  .frame{position:relative;z-index:1;max-width:1200px;margin:0 auto;
-    padding:2rem 1.5rem 5rem}
+  body > *{position:relative;z-index:1}
+  a{color:inherit;text-decoration:none}
+  code,kbd{font-family:var(--mono)}
 
-  header{border:1px solid var(--line);border-radius:18px;padding:1.3rem 1.5rem;
-    display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
-    background:var(--glass);backdrop-filter:blur(14px)}
-  .led{width:10px;height:10px;border-radius:50%;background:var(--teal);
-    box-shadow:0 0 0 0 rgba(95,227,200,.55);animation:ping 2.2s infinite}
-  @keyframes ping{70%{box-shadow:0 0 0 10px rgba(95,227,200,0)}100%{box-shadow:0 0 0 0 rgba(95,227,200,0)}}
-  h1{font-size:1.7rem;font-weight:800;letter-spacing:-.02em;
-    background:linear-gradient(118deg,#cbd6ff,#a78bff 50%,#5fe3c8);
-    -webkit-background-clip:text;-webkit-text-fill-color:transparent}
-  .sub{font-size:1.05rem;color:var(--ink-dim);margin-top:.15rem}
-  .stamp{font-family:var(--mono);font-size:.74rem;letter-spacing:.18em;
-    text-transform:uppercase;color:var(--ink-faint);margin-left:auto;
-    text-align:right;line-height:1.8}
+  /* ---------- top nav ---------- */
+  .topnav{
+    position:sticky;top:0;z-index:50;
+    backdrop-filter:blur(10px);
+    background:rgba(6,11,21,.78);
+    border-bottom:1px solid var(--line);
+  }
+  .topnav-inner{
+    max-width:1320px;margin:0 auto;
+    display:flex;align-items:center;gap:1.4rem;
+    padding:.7rem 1.4rem;
+    font-family:var(--mono);font-size:.78rem;
+    letter-spacing:.14em;text-transform:uppercase;
+  }
+  .brand{display:flex;align-items:center;gap:.55rem;font-weight:700;color:var(--ink);white-space:nowrap;flex:0 0 auto}
+  .brand .mark{
+    width:14px;height:14px;
+    background:linear-gradient(135deg,var(--amber),var(--amber-hot));
+    transform:rotate(45deg);
+    box-shadow:0 0 0 1px rgba(0,0,0,.4) inset,0 0 14px rgba(255,184,78,.5);
+  }
+  .brand .slash{color:var(--ink-faint);font-weight:400}
+  .brand .product{color:var(--amber)}
+  .nav-links{display:flex;align-items:center;gap:.15rem;margin-left:.6rem}
+  .nav-links a{padding:.45rem .9rem;border-radius:6px;color:var(--ink-dim);font-weight:600;letter-spacing:.16em;transition:color .15s,background .15s}
+  .nav-links a:hover{color:var(--ink);background:rgba(255,255,255,.04)}
+  .nav-links a.active{color:var(--mint);background:rgba(107,255,176,.08);box-shadow:inset 0 0 0 1px rgba(107,255,176,.3)}
+  .topnav .spacer{flex:1}
+  .live-stamp{display:flex;align-items:center;gap:.5rem;color:var(--ink-faint);font-size:.72rem;white-space:nowrap;flex:0 0 auto}
+  .live-stamp .pip{width:7px;height:7px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 0 rgba(107,255,176,.55);animation:pulse 2.2s infinite}
+  .live-stamp b{color:var(--mint);font-weight:700}
+  @keyframes pulse{70%{box-shadow:0 0 0 8px rgba(107,255,176,0)}100%{box-shadow:0 0 0 0 rgba(107,255,176,0)}}
 
-  .tip{margin-top:1rem;color:var(--ink-faint);font-size:.95rem;line-height:1.6}
-  .tip a{color:var(--teal);text-decoration:none}
-  .tip a:hover{color:var(--violet)}
+  /* ---------- frame ---------- */
+  .frame{max-width:1320px;margin:0 auto;padding:2.2rem 1.4rem 4rem}
 
-  .collection{margin-top:1.4rem;border:1px solid var(--line);border-radius:18px;
-    background:var(--glass);backdrop-filter:blur(14px);overflow:hidden}
-  .ch{display:flex;align-items:center;gap:.8rem;padding:1rem 1.3rem;
-    border-bottom:1px solid var(--line-soft)}
-  .ch .name{font-weight:800;font-size:1.2rem}
-  .ch .path{font-family:var(--mono);font-size:.88rem;color:var(--ink-faint)}
-  .ch .count{margin-left:auto;font-family:var(--mono);font-size:.85rem;
-    color:var(--ink-faint)}
-  .ch .actions{margin-left:.8rem;display:flex;gap:.45rem}
+  /* =================================================================
+     DATA EXPLORER
+     ================================================================= */
 
-  table{width:100%;border-collapse:collapse;font-size:1rem}
-  th,td{padding:.75rem 1rem;text-align:left;border-bottom:1px solid var(--line-soft);
-    vertical-align:top}
-  th{font-family:var(--mono);font-size:.78rem;letter-spacing:.14em;
-    text-transform:uppercase;color:var(--ink-faint);font-weight:600}
-  td.cell{font-family:var(--mono);font-size:.96rem;color:var(--ink);
-    max-width:28ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* ---------- hero ---------- */
+  .hero{
+    display:grid;grid-template-columns:minmax(0,1fr) 360px;
+    gap:2rem;align-items:end;
+    padding:1.8rem 0 1.4rem;
+    border-bottom:1px solid var(--line);
+    margin-bottom:1.2rem;
+  }
+  @media(max-width:880px){.hero{grid-template-columns:1fr;gap:1.4rem}}
+  .eyebrow{
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--mint);white-space:nowrap;
+    display:inline-flex;align-items:center;gap:.55rem;margin-bottom:.85rem;
+  }
+  .eyebrow::before{content:"";display:inline-block;width:22px;height:1px;background:var(--mint)}
+  h1.bigtitle{
+    font-family:var(--sans);font-size:clamp(2.6rem,5.2vw,3.8rem);
+    font-weight:800;letter-spacing:-.04em;line-height:.96;
+    color:var(--ink);margin-bottom:.55rem;
+  }
+  h1.bigtitle .accent{color:var(--mint);font-style:italic}
+  .lede{font-size:1.02rem;color:var(--ink-dim);line-height:1.55;max-width:60ch}
+  .lede b{color:var(--ink);font-weight:700}
+  .lede code{
+    font-family:var(--mono);font-size:.86em;color:var(--mint);
+    background:rgba(107,255,176,.08);padding:.05em .45em;border-radius:4px;
+    border:1px solid rgba(107,255,176,.18);
+  }
+
+  /* ---------- hero ornament: animated mini-table ---------- */
+  /* A coordinated 12s storyboard playing 3 real API actions in sequence,
+     so a viewer can see what /_data actually does (not just glow):
+       0   – 4s   PUT name on row 2 (Bob → Robert), mint flash, then revert
+       4   – 8s   DELETE row 3 (Pingu) — slides off coral, then restores
+       8   – 12s  POST a new row (Skipper → Iris in row 4), mint flash
+     The footer badge / message / status track the SAME phase so the
+     request and its effect always read together. */
+  .ornament{
+    background:#0a1120;
+    border:1px solid var(--line);border-radius:10px;
+    overflow:hidden;font-family:var(--mono);
+    position:relative;
+  }
+  .ornament::before{
+    content:"";position:absolute;left:0;top:0;bottom:0;width:2px;
+    background:var(--mint);
+  }
+  .ornament-head{
+    display:flex;align-items:center;gap:.5rem;
+    padding:.5rem .85rem;
+    border-bottom:1px solid var(--line);
+    font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-faint);white-space:nowrap;
+  }
+  .ornament-head .pip{
+    width:6px;height:6px;border-radius:50%;background:var(--mint);
+    box-shadow:0 0 0 0 rgba(107,255,176,.55);animation:pulse 2.2s infinite;
+    flex:0 0 auto;
+  }
+  .ornament-head .path{color:var(--mint);font-weight:700;letter-spacing:.12em;flex:0 0 auto}
+  .ornament-head .right{margin-left:auto;color:var(--ink-ghost);font-weight:400;letter-spacing:.04em;text-transform:none;flex:0 0 auto}
+  .ornament-table{width:100%;border-collapse:collapse;font-size:.78rem;table-layout:fixed}
+  .ornament-table th{
+    text-align:left;padding:.4rem .85rem .35rem;
+    font-size:.6rem;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-ghost);font-weight:600;
+    background:rgba(255,255,255,.012);
+    border-bottom:1px solid var(--line);
+  }
+  .ornament-table td{
+    padding:.42rem .85rem;border-bottom:1px solid var(--line);
+    color:var(--ink);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;
+    position:relative;
+  }
+  .ornament-table tr:last-child td{border-bottom:none}
+  .ornament-table .id{color:var(--violet);font-weight:700;width:2.2rem}
+
+  /* The 12s master timeline — every animated element runs on the same
+     duration with its own keyframes, so phases stay in lockstep. */
+
+  /* Row 2 (Bob): cursor + amber edit ring during 0–2.5s; row mint-
+     flashes on PUT success around 2.5–3s; then quiets for the rest
+     of the cycle. */
+  .r-bob{animation:bobRow 12s linear infinite}
+  @keyframes bobRow{
+    0%   {background:transparent;box-shadow:none}
+    1%,18%{background:rgba(255,184,78,.06);box-shadow:inset 0 0 0 1px rgba(255,184,78,.35)}
+    21%,25%{background:rgba(107,255,176,.18);box-shadow:inset 0 0 0 1px rgba(107,255,176,.45)}
+    30%  {background:transparent;box-shadow:none}
+    100% {background:transparent;box-shadow:none}
+  }
+  /* Name text-swap in Bob's cell: "Bob" hides, "Robert" appears mid-edit,
+     then everything reverts before the loop restarts so visually the
+     table returns to its starting state (loop hides the revert). */
+  .swap{display:inline-grid;grid-template-areas:"a"}
+  .swap > span{grid-area:a}
+  .r-bob .swap .orig{animation:bobOrig 12s linear infinite}
+  .r-bob .swap .nu  {animation:bobNew  12s linear infinite;color:var(--amber)}
+  @keyframes bobOrig{
+    0%,12% {opacity:1}
+    15%,28%{opacity:0}
+    31%,100%{opacity:1}
+  }
+  @keyframes bobNew{
+    0%,12% {opacity:0}
+    15%,28%{opacity:1}
+    31%,100%{opacity:0}
+  }
+  /* Cursor sits at the end of the name. It only blinks while the row
+     is actively being edited (0–3s); after the PUT lands it fades. */
+  .cursor{
+    display:inline-block;width:1px;height:.85em;background:var(--amber);
+    margin-left:1px;vertical-align:-.05em;
+    animation:cursorPhase 12s linear infinite;
+  }
+  @keyframes cursorPhase{
+    0%,2%  {opacity:1}
+    2.5%,3%{opacity:0}
+    3.5%,4%{opacity:1}
+    4.5%,5%{opacity:0}
+    5.5%,6%{opacity:1}
+    6.5%,7%{opacity:0}
+    7.5%,8%{opacity:1}
+    8.5%,9%{opacity:0}
+    9.5%,10%{opacity:1}
+    10.5%,11%{opacity:0}
+    11.5%,12%{opacity:1}
+    14%,18% {opacity:1}
+    20%,100%{opacity:0}
+  }
+  /* Cursor color flips mint at the moment the PUT succeeds, which sells
+     the "edit committed" beat. */
+  .r-bob.r-active .cursor{}
+
+  /* Row 3 (Pingu) — DELETE phase 4–8s: coral tint, slide right, fade,
+     then restore for the loop. */
+  .r-pingu{animation:pinguRow 12s linear infinite}
+  @keyframes pinguRow{
+    0%,33.3%   {transform:translateX(0);opacity:1;background:transparent}
+    36%        {transform:translateX(0);opacity:1;background:rgba(255,106,142,.18)}
+    44%        {transform:translateX(18px);opacity:0;background:rgba(255,106,142,.10)}
+    56%        {transform:translateX(18px);opacity:0;background:transparent}
+    60%,66.7%  {transform:translateX(0);opacity:1;background:transparent}
+    100%       {transform:translateX(0);opacity:1;background:transparent}
+  }
+
+  /* Row 4 (Skipper) — POST phase 8–12s: name swaps Skipper → Iris with
+     a brief violet tint, then mint-flashes (201 Created). */
+  .r-iris{animation:irisRow 12s linear infinite}
+  @keyframes irisRow{
+    0%,66.7%   {background:transparent;box-shadow:none}
+    70%,80%    {background:rgba(154,107,255,.10);box-shadow:inset 0 0 0 1px rgba(154,107,255,.4)}
+    82%,86%    {background:rgba(107,255,176,.18);box-shadow:inset 0 0 0 1px rgba(107,255,176,.45)}
+    91%,100%   {background:transparent;box-shadow:none}
+  }
+  .r-iris .swap .orig{animation:irisOrig 12s linear infinite}
+  .r-iris .swap .nu  {animation:irisNew  12s linear infinite;color:var(--violet)}
+  @keyframes irisOrig{
+    0%,72%   {opacity:1}
+    76%,90%  {opacity:0}
+    94%,100% {opacity:1}
+  }
+  @keyframes irisNew{
+    0%,72%   {opacity:0}
+    76%,90%  {opacity:1}
+    94%,100% {opacity:0}
+  }
+
+  /* Footer: three stacked (badge, message, status-code) triplets — each
+     one only visible during its own phase. Stacked via grid-area so the
+     row height never jumps. */
+  .ornament-foot{
+    display:flex;align-items:center;gap:.5rem;
+    padding:.55rem .85rem;
+    border-top:1px solid var(--line);
+    font-size:.7rem;color:var(--ink-faint);
+    background:rgba(255,255,255,.015);
+  }
+  .of-badge{
+    position:relative;display:inline-grid;grid-template-areas:"a";
+    flex:0 0 auto;width:2.7rem;
+  }
+  .of-badge > span{
+    grid-area:a;text-align:center;
+    font-weight:800;font-size:.62rem;letter-spacing:.06em;
+    padding:.12rem .4rem;border:1px solid currentColor;border-radius:3px;
+  }
+  .of-msg{
+    position:relative;display:inline-grid;grid-template-areas:"a";flex:1;min-width:0;
+  }
+  .of-msg > span{grid-area:a;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .of-status{
+    position:relative;display:inline-grid;grid-template-areas:"a";
+    flex:0 0 auto;color:var(--ink-ghost);font-size:.62rem;letter-spacing:.1em;min-width:8rem;text-align:right;
+  }
+  .of-status > span{grid-area:a;text-align:right}
+
+  /* Phase visibility — PUT (0–33.3%), DEL (33.3–66.7%), POST (66.7–100%).
+     A tiny crossfade (~3% of cycle) keeps things from popping. */
+  .ph-put  {color:var(--amber);  animation:phPut  12s linear infinite}
+  .ph-del  {color:var(--coral);  animation:phDel  12s linear infinite}
+  .ph-post {color:var(--violet); animation:phPost 12s linear infinite}
+  @keyframes phPut {
+    0%,30%   {opacity:1}
+    33%,100% {opacity:0}
+  }
+  @keyframes phDel {
+    0%,30%   {opacity:0}
+    34%,63%  {opacity:1}
+    67%,100% {opacity:0}
+  }
+  @keyframes phPost{
+    0%,63%   {opacity:0}
+    67%,100% {opacity:1}
+  }
+  /* Status text: empty during the request, fills in after success. The
+     status-code phase fades in slightly LATER than the badge/message so
+     it reads "request fires → response lands". */
+  .st-put {color:var(--mint); animation:stPut  12s linear infinite}
+  .st-del {color:var(--mint); animation:stDel  12s linear infinite}
+  .st-post{color:var(--mint); animation:stPost 12s linear infinite}
+  @keyframes stPut {
+    0%,18%   {opacity:0}
+    22%,30%  {opacity:1}
+    33%,100% {opacity:0}
+  }
+  @keyframes stDel {
+    0%,52%   {opacity:0}
+    55%,63%  {opacity:1}
+    67%,100% {opacity:0}
+  }
+  @keyframes stPost{
+    0%,85%   {opacity:0}
+    88%,98%  {opacity:1}
+    100%     {opacity:0}
+  }
+  @media(prefers-reduced-motion:reduce){
+    .r-bob,.r-pingu,.r-iris,.swap .orig,.swap .nu,.cursor,
+    .ph-put,.ph-del,.ph-post,.st-put,.st-del,.st-post{animation:none}
+    .r-bob{background:rgba(255,184,78,.06);box-shadow:inset 0 0 0 1px rgba(255,184,78,.35)}
+    .r-bob .swap .nu,.r-iris .swap .nu{opacity:0}
+    .cursor{opacity:1}
+    .ph-put{opacity:1} .ph-del,.ph-post,.st-put,.st-del,.st-post{opacity:0}
+  }
+
+  /* ---------- howto strip (now below hero, thinner) ---------- */
+  .howto{
+    display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;
+    padding:.65rem 1rem;margin-bottom:1.6rem;
+    border:1px solid var(--line);border-radius:8px;
+    background:rgba(255,255,255,.02);
+    font-family:var(--mono);font-size:.78rem;
+  }
+  .howto > .k{
+    color:var(--ink-faint);letter-spacing:.16em;text-transform:uppercase;
+    font-size:.66rem;margin-right:.3rem;white-space:nowrap;flex:0 0 auto;
+  }
+  .howto > .tail{
+    margin-left:auto;color:var(--ink-ghost);font-size:.66rem;
+    letter-spacing:.14em;text-transform:uppercase;
+    white-space:nowrap;flex:0 0 auto;
+  }
+  .howto .step{
+    display:inline-flex;align-items:center;gap:.5rem;
+    padding:.3rem .7rem;border-radius:5px;
+    background:rgba(255,255,255,.025);border:1px solid var(--line);
+    white-space:nowrap;
+  }
+  .howto .n{
+    width:1.1rem;height:1.1rem;border-radius:50%;
+    display:grid;place-items:center;font-weight:800;font-size:.62rem;
+    color:#06091a;background:var(--ink-dim);
+  }
+  .howto .step.click .n{background:var(--amber);color:#2a1500}
+  .howto .step.del   .n{background:var(--coral);color:#2a0712}
+  .howto .step.post  .n{background:var(--violet);color:#160a2a}
+  .howto .lbl{color:var(--ink-dim)}
+  .howto .lbl b{color:var(--ink);font-weight:700}
+  .howto .lbl .amber{color:var(--amber)}
+  .howto .lbl .coral{color:var(--coral)}
+  .howto .lbl .violet{color:var(--violet)}
+
+  /* ---------- collection cards ---------- */
+  .collection{
+    margin-bottom:1.4rem;
+    border:1px solid var(--line);border-radius:10px;
+    background:var(--bg-2);overflow:hidden;
+    position:relative;
+    transition:border-color .2s,box-shadow .25s,transform .2s;
+  }
+  .collection:hover{
+    border-color:rgba(107,255,176,.22);
+    box-shadow:0 14px 40px -22px rgba(107,255,176,.35),0 0 0 1px rgba(107,255,176,.06) inset;
+  }
+  .collection::before{
+    content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+    background:var(--mint);
+    box-shadow:0 0 18px rgba(107,255,176,.3);
+  }
+  .ch{
+    display:flex;align-items:center;gap:.8rem;
+    padding:.9rem 1.2rem;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(255,255,255,.02),transparent);
+  }
+  .ch .name{
+    font-family:var(--sans);font-weight:800;font-size:1.15rem;
+    letter-spacing:-.01em;color:var(--ink);
+    text-transform:capitalize;
+  }
+  .ch .path{
+    font-family:var(--mono);font-size:.78rem;color:var(--mint);
+    padding:.18rem .55rem;border:1px solid rgba(107,255,176,.3);border-radius:5px;
+    background:rgba(107,255,176,.05);
+  }
+  .ch .count{
+    margin-left:auto;font-family:var(--mono);font-size:.74rem;
+    color:var(--ink-faint);letter-spacing:.1em;text-transform:uppercase;
+    white-space:nowrap;
+  }
+  .ch .count b{color:var(--ink);font-weight:700}
+  .ch .actions{display:flex;gap:.45rem;flex:0 0 auto}
+
+  /* ---------- table ---------- */
+  table{width:100%;border-collapse:collapse;font-size:.95rem}
+  th,td{
+    padding:.7rem 1.2rem;text-align:left;
+    border-bottom:1px solid var(--line);vertical-align:top;
+  }
+  tr:last-child td{border-bottom:none}
+  th{
+    font-family:var(--mono);font-size:.7rem;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--ink-faint);font-weight:700;
+    background:rgba(255,255,255,.015);
+  }
+  td.cell{
+    font-family:var(--mono);font-size:.92rem;color:var(--ink);
+    max-width:32ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
   td.id{color:var(--violet);font-weight:700}
-  td.edit{cursor:text;border-bottom:1px dashed var(--line-soft);
-    transition:background .15s,border-color .15s}
-  td.edit:hover{background:rgba(167,139,255,.07);
-    border-bottom-color:rgba(167,139,255,.45)}
-  td.editing{background:rgba(255,206,115,.10);outline:none;
-    border-bottom:1px solid var(--amber);
-    box-shadow:inset 0 0 0 1px rgba(255,206,115,.25);
-    white-space:normal;overflow:visible;text-overflow:clip;max-width:none}
+  td.edit{
+    cursor:text;
+    border-bottom:1px solid var(--line);
+    box-shadow:inset 0 -1px 0 var(--line);
+    transition:background .15s,box-shadow .15s;
+  }
+  td.edit:hover{
+    background:rgba(255,184,78,.05);
+    box-shadow:inset 0 -1px 0 rgba(255,184,78,.4);
+  }
+  td.editing{
+    background:rgba(255,184,78,.08);outline:none;
+    box-shadow:inset 0 0 0 1px rgba(255,184,78,.4);
+    white-space:normal;overflow:visible;text-overflow:clip;max-width:none;
+  }
   td.acts{text-align:right;white-space:nowrap}
-  .empty-row td{color:var(--ink-faint);font-style:italic;text-align:center;padding:1.4rem}
+  .empty-row td{
+    color:var(--ink-faint);font-style:italic;text-align:center;
+    padding:1.4rem;font-family:var(--sans);
+  }
   tr.row-flash{animation:flash 1.2s ease-out}
-  @keyframes flash{0%{background:rgba(95,227,200,.18)}100%{background:transparent}}
+  @keyframes flash{0%{background:rgba(107,255,176,.16)}100%{background:transparent}}
   tr.row-die{animation:die .55s ease-out forwards}
-  @keyframes die{to{background:rgba(255,111,174,.15);opacity:0;transform:translateX(8px)}}
+  @keyframes die{to{background:rgba(255,106,142,.14);opacity:0;transform:translateX(8px)}}
 
-  .btn{font-family:var(--mono);font-size:.82rem;font-weight:700;
-    letter-spacing:.04em;border:1px solid currentColor;background:transparent;
-    padding:.4rem .8rem;border-radius:6px;cursor:pointer;margin-left:.35rem}
-  .btn.get{color:var(--teal)}
+  /* ---------- buttons ---------- */
+  .btn{
+    font-family:var(--mono);font-size:.7rem;font-weight:800;
+    letter-spacing:.08em;text-transform:uppercase;
+    border:1px solid currentColor;background:transparent;
+    padding:.36rem .7rem;border-radius:5px;cursor:pointer;margin-left:.3rem;
+    transition:background .15s;white-space:nowrap;
+  }
+  .btn:hover{background:rgba(255,255,255,.06)}
+  .btn.get{color:var(--mint)}
   .btn.put{color:var(--amber)}
-  .btn.del{color:var(--pink)}
+  .btn.del{color:var(--coral)}
   .btn.add{color:var(--violet)}
   .btn.addf{color:var(--amber)}
-  .btn:hover{background:rgba(255,255,255,.06)}
 
-  .editor{padding:.6rem .9rem;background:rgba(0,0,0,.3);
-    border-top:1px dashed var(--line-soft)}
-  .editor input{font-family:var(--mono);font-size:.82rem;
-    background:rgba(255,255,255,.04);color:var(--ink);
-    border:1px solid var(--line);border-radius:6px;padding:.45rem .65rem;
-    margin-right:.4rem}
-  .editor input:focus{outline:none;border-color:var(--violet);
-    box-shadow:0 0 0 3px rgba(167,139,255,.2)}
+  /* ---------- empty page state ---------- */
+  .empty-page{
+    padding:3rem;text-align:center;color:var(--ink-faint);
+    border:1px dashed var(--line-2);border-radius:12px;margin-top:1.4rem;
+    font-size:.98rem;line-height:1.7;
+  }
+  .empty-page code{
+    font-family:var(--mono);color:var(--mint);
+    background:rgba(107,255,176,.08);padding:.12rem .45rem;border-radius:4px;
+    border:1px solid rgba(107,255,176,.18);
+  }
 
-  .toast{position:fixed;left:50%;bottom:1.6rem;transform:translateX(-50%);
-    background:rgba(10,16,30,.92);border:1px solid var(--line);
-    border-radius:999px;padding:.7rem 1.3rem;font-family:var(--mono);
-    font-size:.92rem;color:var(--ink);backdrop-filter:blur(12px);
-    box-shadow:0 18px 40px -16px rgba(0,0,0,.6);opacity:0;
-    transition:opacity .25s,transform .25s;pointer-events:none;z-index:9}
-  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
-  .toast.ok{border-color:rgba(95,227,200,.5)}
-  .toast.err{border-color:rgba(255,111,174,.6)}
+  /* ---------- toast ---------- */
+  .toast{
+    position:fixed;left:50%;bottom:1.6rem;
+    transform:translateX(-50%) translateY(8px);
+    background:#0d1524;border:1px solid var(--line-2);
+    border-radius:999px;padding:.7rem 1.3rem;
+    font-family:var(--mono);font-size:.86rem;color:var(--ink);
+    box-shadow:0 18px 40px -16px rgba(0,0,0,.7);
+    opacity:0;transition:opacity .25s,transform .25s;
+    pointer-events:none;z-index:99;max-width:90vw;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast.ok{border-color:rgba(107,255,176,.5);box-shadow:0 18px 40px -16px rgba(107,255,176,.25)}
+  .toast.err{border-color:rgba(255,106,142,.6);box-shadow:0 18px 40px -16px rgba(255,106,142,.3)}
 
-  .empty-page{padding:3rem;text-align:center;color:var(--ink-faint);
-    border:1px dashed var(--line);border-radius:18px;margin-top:1.4rem;
-    font-size:1rem;line-height:1.7}
-  .empty-page code{font-family:var(--mono);color:var(--violet);
-    background:rgba(167,139,255,.12);padding:.12rem .45rem;border-radius:4px}
+  /* ---------- footer ---------- */
+  footer.foot{
+    margin-top:2.4rem;padding-top:1rem;
+    border-top:1px solid var(--line);
+    display:flex;gap:.8rem;flex-wrap:wrap;align-items:center;
+    color:var(--ink-faint);font-family:var(--mono);font-size:.82rem;
+  }
+  footer.foot a{
+    padding:.3rem .7rem;border:1px solid var(--line);border-radius:5px;
+    color:var(--ink-dim);transition:color .15s,border-color .15s,background .15s;
+  }
+  footer.foot a:hover{color:var(--mint);border-color:var(--line-2);background:rgba(107,255,176,.04)}
 
-  footer{margin-top:2.6rem;border-top:1px solid var(--line-soft);
-    padding-top:1.2rem;color:var(--ink-faint);font-size:.92rem;line-height:1.7}
-  footer a{color:var(--teal);text-decoration:none}
-</style>
+  /* ---------- entrance ---------- */
+  [data-r]{opacity:0;transform:translateY(8px);animation:rise .65s cubic-bezier(.2,.7,.2,1) forwards}
+  [data-r="1"]{animation-delay:.02s}[data-r="2"]{animation-delay:.12s}
+  @keyframes rise{to{opacity:1;transform:none}}
+  @media(prefers-reduced-motion:reduce){[data-r]{animation:none;opacity:1;transform:none}}
+
+    /* Top-nav activity ticker — 6 tiny bars that "dance" to suggest
+       live traffic. Each bar pulses on its own offset; together they
+       read as a constantly-shifting micro-graph. */
+    .ticker{display:inline-flex;gap:2px;align-items:flex-end;height:10px;margin-right:.45rem}
+    .ticker i{display:block;width:2px;background:currentColor;border-radius:1px;opacity:.7;animation:tick 1.2s ease-in-out infinite}
+    .ticker i:nth-child(1){animation-delay:0s}
+    .ticker i:nth-child(2){animation-delay:.15s}
+    .ticker i:nth-child(3){animation-delay:.3s}
+    .ticker i:nth-child(4){animation-delay:.45s}
+    .ticker i:nth-child(5){animation-delay:.6s}
+    .ticker i:nth-child(6){animation-delay:.75s}
+    @keyframes tick{0%,100%{height:2px}50%{height:10px}}
+    @media(prefers-reduced-motion:reduce){.ticker i{animation:none;height:6px}}
+  </style>
 </head>
 <body>
-<div class="frame">
-  <header>
-    <span class="led"></span>
-    <div>
-      <h1>Data Explorer</h1>
-      <div class="sub">resources auto-discovered from <code style="font-family:var(--mono);color:var(--violet)">routes/</code> · reactive across tabs · backed by JSON</div>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a class="brand" href="/">
+        <span class="mark"></span>
+        <span>PENGUIN-FORGE</span>
+        <span class="slash">/</span>
+        <span class="product">FS-FORGE</span>
+      </a>
+      <div class="nav-links">
+        <a href="/forge">Forge</a>
+        <a href="/play">World</a>
+        <a href="/_inspect">Wire</a>
+        <a href="/_data" class="active">Data</a>
+      </div>
+      <div class="spacer"></div>
+      <div class="live-stamp">
+        <span class="pip"></span>
+        <span class="ticker" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span><span><b>LIVE</b> · reactive · sse</span>
+      </div>
     </div>
-    <div class="stamp">fs-forge<br>backed by data.json<br>generated from DSL hints</div>
-  </header>
-  <div class="tip">
-    <b style="color:var(--ink)">How to use:</b>
-    click any cell to <b style="color:var(--amber)">edit (PUT)</b> ·
-    click <b style="color:var(--pink)">DEL</b> to remove ·
-    click <b style="color:var(--violet)">+ POST</b> on a collection to create.
-    <br>Open <a href="/_data" target="_blank">/_data</a> in another tab —
-    every change syncs live. Open the
-    <a href="/_inspect" target="_blank">Wire Inspector</a> to see the raw
-    HTTP for every action.
+  </nav>
+
+  <div class="frame">
+
+    <!-- ---------- HERO ---------- -->
+    <section class="hero" data-r="1">
+      <div>
+        <div class="eyebrow">framework UI · /_data</div>
+        <h1 class="bigtitle">Data <span class="accent">explorer.</span></h1>
+        <p class="lede">
+          Resources auto-discovered from <code>routes/</code> · reactive
+          across tabs · backed by JSON. There is no hardcoded knowledge of
+          "users" here — drop a new route pair with the right
+          <code>GET[list]</code> / <code>POST[create]</code> hints and the
+          explorer picks it up on next refresh. Every action below flies
+          past <b>/_inspect</b> as real HTTP.
+        </p>
+      </div>
+      <!-- 12s storyboard: PUT Bob → DELETE Pingu → POST Iris. Every
+           animated element is on the same 12s loop with phase-matched
+           keyframes so the badge/message/status in the footer always
+           describes what the highlighted row is doing. -->
+      <div class="ornament" aria-hidden="true">
+        <div class="ornament-head">
+          <span class="pip"></span>
+          <span class="path">/api/users</span>
+          <span class="right">live</span>
+        </div>
+        <table class="ornament-table">
+          <thead><tr><th>id</th><th>name</th><th>room</th></tr></thead>
+          <tbody>
+            <tr><td class="id">1</td><td>Alice</td><td>plaza</td></tr>
+            <tr class="r-bob">
+              <td class="id">2</td>
+              <td><span class="swap"><span class="orig">Bob</span><span class="nu">Robert</span></span><span class="cursor"></span></td>
+              <td>cafe</td>
+            </tr>
+            <tr class="r-pingu"><td class="id">3</td><td>Pingu</td><td>plaza</td></tr>
+            <tr class="r-iris">
+              <td class="id">4</td>
+              <td><span class="swap"><span class="orig">Skipper</span><span class="nu">Iris</span></span></td>
+              <td>igloo</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="ornament-foot">
+          <div class="of-badge">
+            <span class="ph-put">PUT</span>
+            <span class="ph-del">DEL</span>
+            <span class="ph-post">POST</span>
+          </div>
+          <div class="of-msg">
+            <span class="ph-put">name → "Robert"</span>
+            <span class="ph-del">/api/users/3</span>
+            <span class="ph-post">{ name: "Iris" }</span>
+          </div>
+          <div class="of-status">
+            <span class="st-put">200 OK · 3ms</span>
+            <span class="st-del">204 No Content · 2ms</span>
+            <span class="st-post">201 Created · 4ms</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- HOWTO STRIP ---------- -->
+    <div class="howto" data-r="2">
+      <span class="k">how to use ▸</span>
+      <span class="step click"><span class="n">1</span><span class="lbl">click any cell to <b class="amber">edit · PUT</b></span></span>
+      <span class="step del"><span class="n">2</span><span class="lbl">click <b class="coral">DEL</b> to remove</span></span>
+      <span class="step post"><span class="n">3</span><span class="lbl">click <b class="violet">+ POST</b> to create</span></span>
+      <span class="tail">syncs across tabs · SSE</span>
+    </div>
+
+    <main id="root" data-r="2"></main>
+
+    <footer class="foot">
+      <a href="/forge">← framework</a>
+      <a href="/_inspect">/_inspect</a>
+      <a href="/_routes">/_routes</a>
+      <span style="margin-left:auto;color:var(--ink-ghost);font-size:.74rem;letter-spacing:.1em;text-transform:uppercase">backed by data.json · generated from DSL hints</span>
+    </footer>
   </div>
-  <main id="root"></main>
-  <footer>
-    <a href="/forge">← framework</a> · <a href="/_inspect">/_inspect</a>
-    · <a href="/_routes">/_routes</a>
-  </footer>
-</div>
-<div id="toast" class="toast"></div>
+  <div id="toast" class="toast"></div>
 
 <script>
+  /* ============================================================
+     JS preserved verbatim from src/data-ui.js — same /_routes
+     discovery, same /_data/events SSE subscription, same
+     inline edit / PUT / DELETE / POST paths.
+     ============================================================ */
   const root=document.getElementById('root');
   const toastEl=document.getElementById('toast');
   let toastTimer;
@@ -180,20 +687,17 @@ module.exports = `<!DOCTYPE html>
     toastTimer=setTimeout(()=>toastEl.className='toast',2000);
   }
 
-  // --- discover collections from /_routes hints --------------------------
   async function discover(){
     const r=await fetch('/_routes');
     const { routes } = await r.json();
     const lists=routes.filter(rt=>rt.hints&&(rt.hints.GET==='list'||rt.hints.POST==='create'));
     return lists.map(list=>{
-      // find the sibling :id route
       const itemPath=list.path.replace(/\\/?$/,'')+'/:id';
       const item=routes.find(rt=>rt.path===itemPath)||null;
       return { list, item };
     });
   }
 
-  // --- render --------------------------------------------------------------
   async function render(){
     const cols=await discover();
     if(!cols.length){
@@ -226,18 +730,15 @@ module.exports = `<!DOCTYPE html>
       a.appendChild(b);
     }
 
-    const body=document.createElement('div');
-    wrap.appendChild(body);
     root.appendChild(wrap);
     await refreshRows(list,item,wrap,name);
   }
 
   async function refreshRows(list,item,wrap,name){
-    const body=wrap.querySelector('table')||document.createElement('div');
     const res=await fetch(list.path);
     const data=await res.json();
     const rows=Array.isArray(data)?data:[];
-    wrap.querySelector('#count-'+name).textContent=rows.length+' row'+(rows.length===1?'':'s');
+    wrap.querySelector('#count-'+name).innerHTML='<b>'+rows.length+'</b> row'+(rows.length===1?'':'s');
 
     const cols=rows.length?Object.keys(rows[0]):['id','—'];
     const html=[
@@ -284,7 +785,6 @@ module.exports = `<!DOCTYPE html>
     wrap.querySelectorAll('button[data-act]').forEach(b=>{
       b.onclick=()=>doAction(b.dataset.act,b.dataset.id,list,item,wrap,name);
     });
-    // Inline edit: click a cell, type, Enter to commit (PUT), Esc to cancel.
     wrap.querySelectorAll('td.edit').forEach(td=>{
       td.onclick=()=>beginEdit(td,list,item,wrap,name);
       td.onkeydown=(e)=>{if(e.key==='Enter'){e.preventDefault();beginEdit(td,list,item,wrap,name);}};
@@ -292,14 +792,13 @@ module.exports = `<!DOCTYPE html>
   }
 
   function beginEdit(td,list,item,wrap,name){
-    if(td.isContentEditable) return; // already editing
+    if(td.isContentEditable) return;
     const original=td.textContent;
     const field=td.dataset.field;
     const id=td.parentNode.dataset.id;
     td.contentEditable='true';
     td.classList.add('editing');
     td.focus();
-    // place caret at end
     const sel=window.getSelection(),range=document.createRange();
     range.selectNodeContents(td); range.collapse(false);
     sel.removeAllRanges(); sel.addRange(range);
@@ -348,11 +847,6 @@ module.exports = `<!DOCTYPE html>
     }
   }
 
-  // Pick the first non-id field the new row should carry. Uses the
-  // existing rows' shape if any; falls back to "name".
-  // Best-effort: pick the most-likely "primary" field for a collection by
-  // inspecting an existing row (e.g. users → "name", posts → "title").
-  // Falls back to "name" when the collection is empty.
   async function pickCreateField(list){
     try{
       const data=await fetch(list.path).then(r=>r.json());
@@ -364,11 +858,6 @@ module.exports = `<!DOCTYPE html>
     return 'name';
   }
 
-  // POST a new row. The posts collection is special: its server-side
-  // route enforces the same gate as the landing-page Wall — only an
-  // author that already exists in the users collection may post. So
-  // when creating a post we ask for BOTH title and author and forward
-  // whatever the server says (201 → flash; 403 → toast with the hint).
   async function promptCreate(list,name,wrap){
     let qs;
     if (name === 'posts') {
@@ -388,8 +877,6 @@ module.exports = `<!DOCTYPE html>
     }
     const r = await fetch(list.path + qs, { method: 'POST' });
     if (!r.ok) {
-      // Surface the server's hint (e.g. "unknown author") so it doesn't
-      // just look like a silent failure.
       let body;
       try { body = await r.json(); } catch { body = null; }
       const msg = body && (body.hint || body.error)
@@ -418,8 +905,52 @@ module.exports = `<!DOCTYPE html>
       c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
   }
 
-  // Cache item-route lookup for the "+ POST" handler to refresh correctly.
   (async()=>{
+    // ----- preview-only fallback for standalone viewing -----
+    // If /_routes can't be reached (page loaded outside fs-forge), mock
+    // the framework endpoints so the page demos cleanly.
+    async function isStandalone(){
+      if (!location.host || location.protocol === 'file:') return true;
+      try {
+        const r = await fetch('/_routes', { method:'GET' });
+        if (!r.ok) return true;
+        await r.json();
+        return false;
+      } catch { return true; }
+    }
+    if (await isStandalone()) {
+      const mockRoutes = {
+        routes: [
+          { path:'/api/users',     methods:['GET','POST'],          hints:{ GET:'list', POST:'create' } },
+          { path:'/api/users/:id', methods:['GET','PUT','DELETE'],  hints:{ GET:'item', PUT:'update', DELETE:'remove' } },
+          { path:'/api/posts',     methods:['GET','POST'],          hints:{ GET:'list', POST:'create' } },
+          { path:'/api/posts/:id', methods:['GET','PUT','DELETE'],  hints:{ GET:'item', PUT:'update', DELETE:'remove' } },
+        ],
+      };
+      const mockData = {
+        '/api/users': [
+          { id:1, name:'Alice',  room:'plaza' },
+          { id:2, name:'Bob',    room:'cafe'  },
+          { id:3, name:'Pingu',  room:'plaza' },
+          { id:4, name:'Skipper',room:'igloo' },
+        ],
+        '/api/posts': [
+          { id:1, title:'snowstorm warning',  author:'Alice' },
+          { id:2, title:'best fish in town',  author:'Bob'   },
+        ],
+      };
+      const origFetch = window.fetch;
+      window.fetch = (url, opts) => {
+        if (url === '/_routes') return Promise.resolve(new Response(JSON.stringify(mockRoutes), { status:200, headers:{'content-type':'application/json'} }));
+        const base = url.split('?')[0].replace(/\\/\\d+$/,'');
+        if (mockData[base]) {
+          const m = (opts && opts.method) || 'GET';
+          return Promise.resolve(new Response(JSON.stringify(m==='GET'?mockData[base]:{ok:true}), { status:200, headers:{'content-type':'application/json'} }));
+        }
+        return origFetch(url, opts);
+      };
+    }
+
     const cols=await discover();
     window._cols={};
     cols.forEach(c=>window._cols[collectionName(c.list.path)]=c);
@@ -427,17 +958,14 @@ module.exports = `<!DOCTYPE html>
     subscribeToChanges();
   })();
 
-  // --- Reactive sync ----------------------------------------------------
-  // Open two tabs at /_data, change anything in one, and it appears in
-  // the other in real time. The framework's store emits change events;
-  // the dispatcher streams them over SSE; every open Data Explorer tab
-  // refreshes the affected collection's table when one arrives.
   function subscribeToChanges(){
     if(!window.EventSource) return;
-    const es=new EventSource('/_data/events');
-    es.addEventListener('hello', ()=>{
-      // Just a connection probe — nothing to do.
-    });
+    // Skip SSE in preview mode where /_data/events doesn't exist.
+    if (!location.host || location.protocol === 'file:') return;
+    let es;
+    try { es=new EventSource('/_data/events'); } catch { return; }
+    es.onerror=()=>{ try{ es.close(); }catch{} };
+    es.addEventListener('hello', ()=>{});
     es.onmessage=async(m)=>{
       let evt; try{ evt=JSON.parse(m.data); }catch{ return; }
       if(!evt || !evt.collection) return;
@@ -447,8 +975,6 @@ module.exports = `<!DOCTYPE html>
         && document.querySelector('section.collection [id="count-'+evt.collection+'"]').closest('section.collection');
       if(!wrap) return;
       await refreshRows(c.list, c.item, wrap, evt.collection);
-      // Flash the changed row (insert/update) or briefly highlight that
-      // a removal happened (the row is already gone after refresh).
       if(evt.kind!=='remove' && evt.row){
         const row=wrap.querySelector('tr[data-id="'+CSS.escape(String(evt.row.id))+'"]');
         if(row) row.classList.add('row-flash');
@@ -460,4 +986,5 @@ module.exports = `<!DOCTYPE html>
   }
 </script>
 </body>
-</html>`;
+</html>
+`;

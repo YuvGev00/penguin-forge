@@ -1,0 +1,4 @@
+/* Vendored from Google Fonts (latin subset, variable fonts) — no network at runtime. */
+
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400 700;font-display:swap;src:url(./fonts/jetbrains-mono-var.woff2) format('woff2')}
+@font-face{font-family:'Manrope';font-style:normal;font-weight:400 800;font-display:swap;src:url(./fonts/manrope-var.woff2) format('woff2')}

@@ -1,10 +1,12 @@
 'use strict';
 
-// The /_inspect page — a live view of the raw bytes crossing the socket,
-// drawn in the same "Aurora" language as the landing page. Served as a
-// string by the dispatcher (framework UI, not a route).
+// The /_inspect page — Wire Inspector. Forge-console redesign (drop-in
+// from the Claude Design bundle). Served as a string by the dispatcher
+// (framework UI, not a route). All fetch paths / handlers preserved.
 //
-// NOTE: this file is a JS template literal, so it must contain NO ${...}.
+// NOTE: this file is a JS template literal. The HTML body uses single
+// backslashes (\n, regex \s\d) — they are doubled on embed so the
+// literal still emits single backslashes to the browser.
 
 module.exports = `<!DOCTYPE html>
 <html lang="en">
@@ -12,240 +14,685 @@ module.exports = `<!DOCTYPE html>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>fs-forge · wire inspector</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- Fonts vendored locally (public/vendor/) — no CDN, works fully offline. -->
+<link href="/vendor/fonts.css" rel="stylesheet">
 <style>
+  /* ============================================================
+     FORGE CONSOLE — shared visual system
+     ============================================================ */
   :root{
     color-scheme:dark;
-    --bg:#070a14; --ink:#eaf0ff; --ink-dim:#9aa6cc; --ink-faint:#6b769c;
-    --line:rgba(255,255,255,.10); --line-soft:rgba(255,255,255,.06);
-    --glass:rgba(255,255,255,.05);
-    --violet:#a78bff; --teal:#5fe3c8; --pink:#ff6fae; --amber:#ffce73;
-    --ok:#3ddc6e; /* success green — deliberately distinct from the cyan teal */
-    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
-    --sans:"Manrope",system-ui,sans-serif;
+    --bg:#060b15;
+    --bg-2:#0d1524;
+    --bg-3:#131c2e;
+    --line:rgba(255,255,255,.07);
+    --line-2:rgba(255,255,255,.14);
+    --ink:#eef2fc;
+    --ink-dim:#95a1c0;
+    --ink-faint:#5d6885;
+    --ink-ghost:#3a4360;
+
+    --amber:#ffb84e;
+    --amber-hot:#ff8a3d;
+    --mint:#6bffb0;
+    --coral:#ff6a8e;
+    --violet:#9a6bff;
+    --sky:#7cb8ff;
+
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:"Manrope",system-ui,-apple-system,Segoe UI,sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:var(--sans);color:var(--ink);background:var(--bg);
-    min-height:100vh;-webkit-font-smoothing:antialiased;
-    position:relative;overflow-x:hidden}
-  body::before{content:"";position:fixed;inset:-30%;z-index:0;
-    pointer-events:none;background:
-      radial-gradient(38% 38% at 16% 14%, rgba(120,90,255,.30), transparent 70%),
-      radial-gradient(34% 34% at 84% 22%, rgba(0,210,185,.20), transparent 70%),
-      radial-gradient(44% 44% at 60% 96%, rgba(255,90,170,.16), transparent 70%);
-    filter:blur(46px);animation:drift 26s ease-in-out infinite alternate}
-  @keyframes drift{0%{transform:translate3d(0,0,0) scale(1)}
-    100%{transform:translate3d(-2%,2%,0) scale(1.06)}}
+  html,body{background:var(--bg);color:var(--ink)}
+  ::selection{background:rgba(255,184,78,.3);color:var(--ink)}
+  ::-moz-selection{background:rgba(255,184,78,.3);color:var(--ink)}
+  :focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:4px}
+  *::-webkit-scrollbar{width:9px;height:9px}
+  *::-webkit-scrollbar-track{background:transparent}
+  *::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:99px}
+  *::-webkit-scrollbar-thumb:hover{background:rgba(255,184,78,.3)}
+  body{
+    font-family:var(--sans);min-height:100vh;
+    -webkit-font-smoothing:antialiased;line-height:1.55;
+    font-variant-numeric:tabular-nums;
+    background:
+      linear-gradient(180deg,var(--violet) 0 2px,transparent 2px 100%),
+      repeating-linear-gradient(0deg,transparent 0 39px,rgba(255,255,255,.022) 39px 40px),
+      radial-gradient(60% 50% at 50% -10%,rgba(154,107,255,.06),transparent 70%),
+      var(--bg);
+  }
+  body::before{
+    content:"";position:fixed;inset:-20%;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(28% 28% at 14% 18%,rgba(154,107,255,.07),transparent 70%),
+      radial-gradient(32% 32% at 86% 30%,rgba(124,184,255,.05),transparent 70%);
+    filter:blur(40px);animation:ambient 30s ease-in-out infinite alternate;
+  }
+  @keyframes ambient{
+    0%{transform:translate3d(0,0,0) scale(1)}
+    100%{transform:translate3d(-2%,1.5%,0) scale(1.05)}
+  }
   @media(prefers-reduced-motion:reduce){body::before{animation:none}}
-  .frame{position:relative;z-index:1;max-width:1200px;margin:0 auto;
-    padding:2rem 1.5rem 5rem}
-  header{border:1px solid var(--line);border-radius:18px;padding:1.3rem 1.5rem;
-    display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
-    background:var(--glass);backdrop-filter:blur(14px)}
-  .led{width:10px;height:10px;border-radius:50%;background:var(--teal);
-    box-shadow:0 0 0 0 rgba(95,227,200,.55);animation:ping 2.2s infinite}
-  @keyframes ping{70%{box-shadow:0 0 0 10px rgba(95,227,200,0)}100%{box-shadow:0 0 0 0 rgba(95,227,200,0)}}
-  h1{font-size:1.7rem;font-weight:800;letter-spacing:-.02em;
-    background:linear-gradient(118deg,#cbd6ff,#a78bff 50%,#5fe3c8);
-    -webkit-background-clip:text;-webkit-text-fill-color:transparent}
-  .sub{font-size:1.05rem;color:var(--ink-dim);margin-top:.15rem}
-  .conn{display:inline-flex;align-items:center;gap:.45rem;
-    font-family:var(--mono);font-size:.8rem;letter-spacing:.12em;
-    text-transform:uppercase;padding:.35rem .8rem;border-radius:999px;
-    border:1px solid currentColor;color:var(--teal)}
-  .conn.bad{color:var(--pink)} .conn.wait{color:var(--amber)}
-  .conn .pip{width:7px;height:7px;border-radius:50%;background:currentColor}
-  .stamp{font-family:var(--mono);font-size:.74rem;letter-spacing:.18em;
-    text-transform:uppercase;color:var(--ink-faint);margin-left:auto;
-    text-align:right;line-height:1.8}
-  .ctl{display:flex;align-items:center;gap:1.1rem;margin-top:1rem;
-    padding:.85rem 1.4rem;border:1px solid var(--line-soft);border-radius:14px;
-    font-family:var(--mono);font-size:.88rem;color:var(--ink-faint);
-    flex-wrap:wrap;background:rgba(255,255,255,.025)}
-  .ctl label{display:flex;gap:.45rem;align-items:center;cursor:pointer}
-  .ctl button{font-family:var(--mono);font-size:.82rem;letter-spacing:.1em;
-    text-transform:uppercase;background:rgba(255,255,255,.05);color:var(--ink);
-    border:1px solid var(--line);border-radius:8px;padding:.45rem 1rem;
-    cursor:pointer}
-  .ctl button:hover{border-color:var(--violet);color:var(--violet)}
-  .ctl a{margin-left:auto;color:var(--teal);text-decoration:none}
-  .ctl a:hover{color:var(--violet)}
-  .legend{display:flex;gap:1.2rem;font-size:.82rem}
-  .legend i{font-style:normal;color:var(--ink-faint)}
-  .legend .in::before{content:"▼ ";color:var(--violet)}
-  .legend .out::before{content:"▲ ";color:var(--teal)}
-  main{margin-top:1.2rem;display:flex;flex-direction:column;gap:.8rem}
-  .empty{border:1px dashed var(--line);border-radius:16px;padding:2.8rem;
-    text-align:center;color:var(--ink-faint);font-size:1rem}
-  .empty a{color:var(--teal)}
-  .ev{border:1px solid var(--line);border-radius:14px;
-    background:var(--glass);backdrop-filter:blur(10px);overflow:hidden;
-    animation:rise .4s ease both}
-  @keyframes rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
-  .ev .h{display:flex;gap:.8rem;align-items:center;padding:.6rem 1.1rem;
-    font-family:var(--mono);font-size:.82rem;letter-spacing:.06em;
-    border-bottom:1px solid var(--line-soft)}
-  .ev.in{border-left:3px solid var(--violet)}
-  .ev.out{border-left:3px solid var(--teal)}
-  /* Colour outbound responses by status: green = 2xx/3xx, red = 4xx/5xx.
-     Inbound stays violet; outbound body chunks with no status line keep
-     the neutral teal. */
-  .ev.out.ok{border-left-color:var(--ok,#54e0a8)}
-  .ev.out.err{border-left-color:var(--pink)}
-  .tag{font-weight:700;letter-spacing:.14em}
-  .ev.in .tag{color:var(--violet)} .ev.out .tag{color:var(--teal)}
-  .ev.out.ok .tag{color:var(--ok,#54e0a8)}
-  .ev.out.err .tag{color:var(--pink)}
-  .code{font-family:var(--mono);font-weight:700;font-size:.78rem;
-    padding:.08rem .45rem;border-radius:5px;letter-spacing:.02em}
-  .ev.out.ok .code{color:#0a1f16;background:var(--ok,#54e0a8)}
-  .ev.out.err .code{color:#2a0a12;background:var(--pink)}
-  .meta{color:var(--ink-faint);margin-left:auto}
-  .replay{font-family:var(--mono);font-size:.78rem;font-weight:700;
-    letter-spacing:.06em;color:var(--amber, #ffce73);
-    border:1px solid currentColor;background:transparent;
-    padding:.25rem .7rem;border-radius:6px;cursor:pointer;margin-left:.6rem}
-  .replay:hover{background:rgba(255,206,115,.12)}
-  .replay:disabled{opacity:.4;cursor:default}
-  pre{font-family:var(--mono);padding:1rem 1.1rem;font-size:.92rem;
-    line-height:1.6;white-space:pre-wrap;word-break:break-all;
-    color:var(--ink);max-height:340px;overflow:auto;background:rgba(0,0,0,.3)}
+  body > *{position:relative;z-index:1}
+  a{color:inherit;text-decoration:none}
+  code,kbd{font-family:var(--mono)}
 
-  /* Protocol Lab */
-  .lab{margin-top:1rem;border:1px solid rgba(255,206,115,.35);border-radius:14px;
-    background:linear-gradient(180deg,rgba(255,206,115,.06),rgba(255,255,255,.02));
-    padding:1rem 1.2rem}
-  .lab-h{font-family:var(--mono);font-size:.82rem;color:var(--amber);
-    letter-spacing:.04em;margin-bottom:.7rem}
-  .lab-presets{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;
-    font-family:var(--mono);font-size:.78rem;color:var(--ink-faint);
-    margin-bottom:.7rem}
-  .lab-presets button{font-family:var(--mono);font-size:.76rem;cursor:pointer;
-    color:var(--ink);background:rgba(255,255,255,.05);
-    border:1px solid var(--line);border-radius:7px;padding:.3rem .65rem}
-  .lab-presets button:hover{border-color:var(--amber);color:var(--amber)}
-  #labBytes{width:100%;min-height:9.5rem;resize:vertical;
-    font-family:var(--mono);font-size:.86rem;line-height:1.55;
-    color:var(--ink);background:rgba(0,0,0,.35);border:1px solid var(--line);
-    border-radius:10px;padding:.8rem .95rem;white-space:pre;overflow:auto}
-  #labBytes:focus{outline:none;border-color:var(--amber);
-    box-shadow:0 0 0 3px rgba(255,206,115,.18)}
-  .lab-foot{display:flex;align-items:center;gap:.9rem;margin-top:.7rem;
-    flex-wrap:wrap}
-  #labSend{font-family:var(--sans);font-weight:800;font-size:.86rem;
-    color:#231400;border:none;border-radius:8px;padding:.5rem 1.2rem;
-    cursor:pointer;background:linear-gradient(120deg,#ffce73,#ffb14e);
-    box-shadow:0 8px 22px -10px rgba(255,177,78,.7)}
-  #labSend:hover{filter:brightness(1.06)}
-  .lab-hint{font-size:.74rem;color:var(--ink-faint)}
-  .lab-hint code{font-family:var(--mono);color:var(--amber);
-    background:rgba(255,206,115,.12);padding:.05rem .3rem;border-radius:3px}
-</style>
+  /* ---------- top nav ---------- */
+  .topnav{
+    position:sticky;top:0;z-index:50;
+    backdrop-filter:blur(10px);
+    background:rgba(6,11,21,.78);
+    border-bottom:1px solid var(--line);
+  }
+  .topnav-inner{
+    max-width:1320px;margin:0 auto;
+    display:flex;align-items:center;gap:1.4rem;
+    padding:.7rem 1.4rem;
+    font-family:var(--mono);font-size:.78rem;
+    letter-spacing:.14em;text-transform:uppercase;
+  }
+  .brand{display:flex;align-items:center;gap:.55rem;font-weight:700;color:var(--ink);white-space:nowrap;flex:0 0 auto}
+  .brand .mark{
+    width:14px;height:14px;
+    background:linear-gradient(135deg,var(--amber),var(--amber-hot));
+    transform:rotate(45deg);
+    box-shadow:0 0 0 1px rgba(0,0,0,.4) inset,0 0 14px rgba(255,184,78,.5);
+  }
+  .brand .slash{color:var(--ink-faint);font-weight:400}
+  .brand .product{color:var(--amber)}
+  .nav-links{display:flex;align-items:center;gap:.15rem;margin-left:.6rem}
+  .nav-links a{padding:.45rem .9rem;border-radius:6px;color:var(--ink-dim);font-weight:600;letter-spacing:.16em;transition:color .15s,background .15s}
+  .nav-links a:hover{color:var(--ink);background:rgba(255,255,255,.04)}
+  .nav-links a.active{color:var(--violet);background:rgba(154,107,255,.09);box-shadow:inset 0 0 0 1px rgba(154,107,255,.3)}
+  .topnav .spacer{flex:1}
+  .live-stamp{display:flex;align-items:center;gap:.5rem;color:var(--ink-faint);font-size:.72rem;white-space:nowrap;flex:0 0 auto}
+  .live-stamp .pip{width:7px;height:7px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 0 rgba(107,255,176,.55);animation:pulse 2.2s infinite}
+  .live-stamp.bad .pip{background:var(--coral);animation:none}
+  .live-stamp.wait .pip{background:var(--amber);animation:pulse 1.4s infinite}
+  .live-stamp b{color:var(--mint);font-weight:700}
+  .live-stamp.bad b{color:var(--coral)}
+  .live-stamp.wait b{color:var(--amber)}
+  @keyframes pulse{70%{box-shadow:0 0 0 8px rgba(107,255,176,0)}100%{box-shadow:0 0 0 0 rgba(107,255,176,0)}}
+
+  /* ---------- frame ---------- */
+  .frame{max-width:1320px;margin:0 auto;padding:2.2rem 1.4rem 4rem}
+
+  /* ---------- shared card ---------- */
+  .card{background:var(--bg-2);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .card-head{
+    display:flex;align-items:center;gap:.55rem;padding:.6rem 1rem;
+    border-bottom:1px solid var(--line);font-family:var(--mono);font-size:.7rem;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);
+    background:linear-gradient(180deg,rgba(255,255,255,.025),transparent);
+  }
+  .card-head .dot{width:7px;height:7px;border-radius:50%;background:var(--violet);box-shadow:0 0 0 2px rgba(154,107,255,.18)}
+  .card-head .right{margin-left:auto;color:var(--ink-ghost)}
+
+  /* =================================================================
+     WIRE INSPECTOR
+     ================================================================= */
+
+  /* ---------- hero ---------- */
+  .hero{
+    display:grid;grid-template-columns:minmax(0,1fr) 360px;
+    gap:2rem;align-items:end;
+    padding:1.8rem 0 1.4rem;
+    border-bottom:1px solid var(--line);
+    margin-bottom:1.2rem;
+  }
+  @media(max-width:880px){.hero{grid-template-columns:1fr;gap:1.4rem}}
+  .eyebrow{
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--violet);white-space:nowrap;
+    display:inline-flex;align-items:center;gap:.55rem;margin-bottom:.85rem;
+  }
+  .eyebrow::before{content:"";display:inline-block;width:22px;height:1px;background:var(--violet)}
+  h1.bigtitle{
+    font-family:var(--sans);font-size:clamp(2.6rem,5.2vw,3.8rem);
+    font-weight:800;letter-spacing:-.04em;line-height:.96;
+    color:var(--ink);margin-bottom:.55rem;
+  }
+  h1.bigtitle .accent{color:var(--violet);font-style:italic}
+  .lede{font-size:1.02rem;color:var(--ink-dim);line-height:1.55;max-width:60ch}
+  .lede b{color:var(--ink);font-weight:700}
+  .lede code{
+    font-family:var(--mono);font-size:.86em;color:var(--violet);
+    background:rgba(154,107,255,.08);padding:.05em .45em;border-radius:4px;
+    border:1px solid rgba(154,107,255,.18);
+  }
+
+  /* ---------- hero ornament: animated byte tape + event ticker ----------
+     The ornament shows what /_inspect does: bytes scrolling across a TCP
+     socket, with direction-coded event rows underneath. Pure CSS — a
+     horizontally scrolling hex string + 4 stacked mini-events, one of
+     which pulses to suggest a "just arrived" event. */
+  .ornament{
+    background:#0a1120;
+    border:1px solid var(--line);border-radius:10px;
+    overflow:hidden;font-family:var(--mono);
+    position:relative;
+  }
+  .ornament::before{
+    content:"";position:absolute;left:0;top:0;bottom:0;width:2px;
+    background:var(--violet);
+  }
+  .ornament-head{
+    display:flex;align-items:center;gap:.5rem;
+    padding:.5rem .85rem;
+    border-bottom:1px solid var(--line);
+    font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-faint);
+    white-space:nowrap;
+  }
+  .ornament-head .pip{
+    width:6px;height:6px;border-radius:50%;background:var(--mint);
+    box-shadow:0 0 0 0 rgba(107,255,176,.55);animation:pulse 2.2s infinite;
+    flex:0 0 auto;
+  }
+  .ornament-head .path{color:var(--violet);font-weight:700;letter-spacing:.12em;flex:0 0 auto}
+  .ornament-head .right{margin-left:auto;color:var(--ink-ghost);font-weight:400;letter-spacing:.04em;text-transform:none;flex:0 0 auto}
+
+  .tape{
+    position:relative;
+    padding:.45rem 0;
+    border-bottom:1px solid var(--line);
+    background:#06091a;
+    overflow:hidden;
+    mask:linear-gradient(90deg,transparent 0,#000 8%,#000 92%,transparent 100%);
+    -webkit-mask:linear-gradient(90deg,transparent 0,#000 8%,#000 92%,transparent 100%);
+  }
+  .tape-track{
+    display:inline-block;white-space:nowrap;
+    font-family:var(--mono);font-size:.66rem;
+    color:var(--ink-faint);letter-spacing:.18em;
+    animation:tapeScroll 22s linear infinite;
+    will-change:transform;
+  }
+  .tape-track .hi{color:var(--violet);animation:hiGet 8s linear infinite}
+  .tape-track .hi.b{color:var(--mint);animation:hiOk 8s linear infinite}
+  .tape-track .hi.c{color:var(--coral);animation:hiErr 8s linear infinite}
+  .tape-track .hi.d{color:var(--violet);animation:hiDel 8s linear infinite}
+  /* Each highlight burns bright + drop-shadow during its 2s phase,
+     then dims back to its base color. Phases: GET 0–25%, OK 25–50%,
+     DEL 50–75%, ERR 75–100% of the 8s loop. */
+  @keyframes hiGet{
+    0%,22%   {filter:brightness(1.7) drop-shadow(0 0 5px rgba(154,107,255,.7))}
+    25%,100% {filter:none}
+  }
+  @keyframes hiOk{
+    0%,25%   {filter:none}
+    27%,47%  {filter:brightness(1.7) drop-shadow(0 0 5px rgba(107,255,176,.7))}
+    50%,100% {filter:none}
+  }
+  @keyframes hiDel{
+    0%,50%   {filter:none}
+    52%,72%  {filter:brightness(1.7) drop-shadow(0 0 5px rgba(154,107,255,.7))}
+    75%,100% {filter:none}
+  }
+  @keyframes hiErr{
+    0%,75%   {filter:none}
+    77%,97%  {filter:brightness(1.8) drop-shadow(0 0 5px rgba(255,106,142,.7))}
+    100%     {filter:none}
+  }
+  @keyframes tapeScroll{
+    0%{transform:translateX(0)}
+    100%{transform:translateX(-50%)}
+  }
+
+  .ow-events{display:flex;flex-direction:column}
+  .ow-ev{
+    display:flex;align-items:center;gap:.55rem;
+    padding:.4rem .85rem;
+    border-bottom:1px solid var(--line);
+    font-size:.74rem;
+    position:relative;
+  }
+  .ow-ev:last-child{border-bottom:none}
+  .ow-ev::before{
+    content:"";position:absolute;left:0;top:0;bottom:0;width:2px;
+  }
+  .ow-ev.in::before{background:var(--violet)}
+  .ow-ev.ok::before{background:var(--mint)}
+  .ow-ev.err::before{background:var(--coral)}
+  .ow-ev .arr{font-weight:800;font-size:.7rem;width:.85rem;text-align:center}
+  .ow-ev.in .arr{color:var(--violet)}
+  .ow-ev.ok .arr{color:var(--mint)}
+  .ow-ev.err .arr{color:var(--coral)}
+  .ow-ev .lbl{color:var(--ink);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ow-ev .ms{color:var(--ink-ghost);font-size:.6rem;letter-spacing:.08em}
+
+  /* Sequence the "just arrived" highlight through the 4 events in
+     order. Each event holds the spotlight for ~2s of the 8s loop,
+     matching the byte-tape highlight above. */
+  .ow-events > .ow-ev:nth-child(1){animation:owActGet 8s linear infinite}
+  .ow-events > .ow-ev:nth-child(2){animation:owActOk  8s linear infinite}
+  .ow-events > .ow-ev:nth-child(3){animation:owActDel 8s linear infinite}
+  .ow-events > .ow-ev:nth-child(4){animation:owActErr 8s linear infinite}
+  @keyframes owActGet{
+    0%,22%   {background:rgba(154,107,255,.10);box-shadow:inset 2px 0 0 var(--violet),0 0 14px -6px rgba(154,107,255,.5)}
+    25%,100% {background:transparent;box-shadow:none}
+  }
+  @keyframes owActOk{
+    0%,25%   {background:transparent;box-shadow:none}
+    27%,47%  {background:rgba(107,255,176,.10);box-shadow:inset 2px 0 0 var(--mint),0 0 14px -6px rgba(107,255,176,.5)}
+    50%,100% {background:transparent;box-shadow:none}
+  }
+  @keyframes owActDel{
+    0%,50%   {background:transparent;box-shadow:none}
+    52%,72%  {background:rgba(154,107,255,.10);box-shadow:inset 2px 0 0 var(--violet),0 0 14px -6px rgba(154,107,255,.5)}
+    75%,100% {background:transparent;box-shadow:none}
+  }
+  @keyframes owActErr{
+    0%,75%   {background:transparent;box-shadow:none}
+    77%,97%  {background:rgba(255,106,142,.10);box-shadow:inset 2px 0 0 var(--coral),0 0 14px -6px rgba(255,106,142,.5)}
+    100%     {background:transparent;box-shadow:none}
+  }
+  /* Old single-event "fresh" kept as a no-op for backward compat
+     should the live JS ever stamp a fresh class. */
+  .ow-ev.fresh{}
+  .ow-foot{
+    display:flex;align-items:center;gap:.55rem;
+    padding:.5rem .85rem;
+    border-top:1px solid var(--line);
+    font-size:.7rem;color:var(--ink-faint);
+    background:rgba(255,255,255,.015);
+    white-space:nowrap;
+  }
+  /* Phase-stacked metadata: every line occupies the same grid cell so
+     the row never re-flows; opacity keyframes do the swap. */
+  .ow-foot .stack{
+    display:inline-grid;grid-template-areas:"a";flex:1;min-width:0;
+  }
+  .ow-foot .stack > span{
+    grid-area:a;color:var(--ink-dim);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .ow-foot .stack > span b{color:var(--ink);font-weight:700}
+  .ow-foot .ph-get{animation:phGet 8s linear infinite}
+  .ow-foot .ph-ok {animation:phOk  8s linear infinite}
+  .ow-foot .ph-del{animation:phDel 8s linear infinite}
+  .ow-foot .ph-err{animation:phErr 8s linear infinite}
+  @keyframes phGet{0%,22%{opacity:1}25%,100%{opacity:0}}
+  @keyframes phOk {0%,25%{opacity:0}27%,47%{opacity:1}50%,100%{opacity:0}}
+  @keyframes phDel{0%,50%{opacity:0}52%,72%{opacity:1}75%,100%{opacity:0}}
+  @keyframes phErr{0%,75%{opacity:0}77%,97%{opacity:1}100%{opacity:0}}
+  .ow-foot .right{
+    margin-left:0;color:var(--ink-ghost);
+    font-size:.62rem;letter-spacing:.1em;flex:0 0 auto;
+  }
+
+  @media(prefers-reduced-motion:reduce){
+    .tape-track,.tape-track .hi,
+    .ow-events > .ow-ev,
+    .ow-foot .ph-get,.ow-foot .ph-ok,.ow-foot .ph-del,.ow-foot .ph-err{
+      animation:none;
+    }
+    .ow-events > .ow-ev:nth-child(1){background:rgba(154,107,255,.10);box-shadow:inset 2px 0 0 var(--violet)}
+    .ow-foot .ph-get{opacity:1}
+    .ow-foot .ph-ok,.ow-foot .ph-del,.ow-foot .ph-err{opacity:0}
+  }
+
+  /* ---------- control bar ---------- */
+  .ctl{
+    display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;
+    padding:.7rem 1rem;
+    border:1px solid var(--line);border-radius:9px;
+    background:var(--bg-2);
+    font-family:var(--mono);font-size:.8rem;color:var(--ink-dim);
+    margin-bottom:.9rem;
+  }
+  .ctl label{display:flex;gap:.42rem;align-items:center;cursor:pointer;user-select:none;white-space:nowrap}
+  .ctl input[type=checkbox]{
+    width:14px;height:14px;
+    accent-color:var(--violet);
+    cursor:pointer;
+  }
+  .ctl-btn{
+    font-family:var(--mono);font-size:.74rem;font-weight:700;letter-spacing:.08em;
+    text-transform:uppercase;cursor:pointer;
+    color:var(--ink);background:rgba(255,255,255,.04);
+    border:1px solid var(--line);border-radius:6px;
+    padding:.42rem .8rem;transition:color .15s,border-color .15s,background .15s;
+    white-space:nowrap;
+  }
+  .ctl-btn:hover{color:var(--violet);border-color:rgba(154,107,255,.4)}
+  .ctl-btn.amber{color:var(--amber);border-color:rgba(255,184,78,.3)}
+  .ctl-btn.amber:hover{background:rgba(255,184,78,.07);border-color:var(--amber)}
+  .ctl .spacer{flex:1}
+  .ctl .back{
+    color:var(--ink-faint);transition:color .15s;
+    display:inline-flex;align-items:center;gap:.3rem;
+    white-space:nowrap;font-size:.74rem;
+  }
+  .ctl .back:hover{color:var(--mint)}
+  .ctl .count{
+    color:var(--ink-faint);font-size:.74rem;letter-spacing:.1em;
+    white-space:nowrap;
+  }
+  .ctl .count b{color:var(--violet)}
+
+  /* ---------- protocol lab ---------- */
+  .lab{
+    margin-bottom:1rem;
+    border:1px solid rgba(255,184,78,.35);border-radius:10px;
+    background:linear-gradient(180deg,rgba(255,184,78,.04),rgba(255,255,255,.01));
+    overflow:hidden;
+  }
+  .lab-head{
+    display:flex;align-items:center;gap:.55rem;
+    padding:.65rem 1rem;
+    border-bottom:1px solid rgba(255,184,78,.18);
+    font-family:var(--mono);font-size:.74rem;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--amber);font-weight:700;
+  }
+  .lab-head .right{margin-left:auto;color:var(--ink-ghost);font-weight:400;letter-spacing:.1em;text-transform:none;font-size:.7rem}
+  .lab-body{padding:.9rem 1rem 1rem}
+  .lab-presets{
+    display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;
+    font-family:var(--mono);font-size:.76rem;color:var(--ink-faint);
+    margin-bottom:.7rem;
+  }
+  .lab-presets > span{color:var(--ink-ghost);letter-spacing:.12em;text-transform:uppercase;font-size:.66rem;margin-right:.2rem}
+  .lab-presets button{
+    font-family:var(--mono);font-size:.74rem;font-weight:600;cursor:pointer;
+    color:var(--ink-dim);background:rgba(255,255,255,.03);
+    border:1px solid var(--line);border-radius:6px;padding:.3rem .65rem;
+    transition:color .15s,border-color .15s,background .15s;
+  }
+  .lab-presets button:hover{color:var(--amber);border-color:rgba(255,184,78,.4);background:rgba(255,184,78,.05)}
+  #labBytes{
+    width:100%;min-height:10rem;resize:vertical;
+    font-family:var(--mono);font-size:.86rem;line-height:1.6;
+    color:var(--ink);background:#06091a;
+    border:1px solid var(--line);border-radius:8px;
+    padding:.8rem .95rem;white-space:pre;overflow:auto;
+  }
+  #labBytes:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 3px rgba(255,184,78,.16)}
+  .lab-foot{display:flex;align-items:center;gap:.85rem;margin-top:.7rem;flex-wrap:wrap}
+  #labSend{
+    font-family:var(--sans);font-weight:800;font-size:.84rem;
+    color:#2a1500;border:none;border-radius:7px;padding:.5rem 1.2rem;
+    cursor:pointer;letter-spacing:.02em;
+    background:linear-gradient(135deg,var(--amber),var(--amber-hot));
+    box-shadow:0 6px 16px -8px rgba(255,140,40,.7);
+    transition:filter .15s,transform .15s;
+  }
+  #labSend:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  .lab-hint{font-size:.74rem;color:var(--ink-faint);font-family:var(--mono)}
+  .lab-hint code{color:var(--amber);background:rgba(255,184,78,.08);padding:.05em .35em;border-radius:3px}
+
+  /* ---------- event feed ---------- */
+  .feed-col{display:flex;flex-direction:column;gap:.55rem}
+
+  .empty{
+    border:1px dashed var(--line-2);border-radius:12px;
+    padding:2.6rem 1.5rem;text-align:center;
+    color:var(--ink-faint);font-size:.95rem;line-height:1.6;
+  }
+  .empty a{color:var(--violet);font-weight:600}
+  .empty a:hover{color:var(--amber)}
+  .empty .glyph{
+    font-family:var(--mono);font-size:1.4rem;color:var(--ink-ghost);
+    letter-spacing:.4em;margin-bottom:.7rem;
+  }
+
+  .ev{
+    border:1px solid var(--line);border-radius:9px;
+    background:var(--bg-2);overflow:hidden;
+    animation:rise .35s ease both;
+    position:relative;
+    transition:border-color .2s,box-shadow .25s;
+  }
+  .ev:hover{
+    border-color:var(--line-2);
+    box-shadow:0 14px 30px -22px rgba(0,0,0,.6);
+  }
+  .ev::before{
+    content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+  }
+  .ev.in::before{background:var(--violet)}
+  .ev.out::before{background:var(--sky)}
+  .ev.out.ok::before{background:var(--mint)}
+  .ev.out.err::before{background:var(--coral)}
+  @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .ev .h{
+    display:flex;gap:.6rem;align-items:center;
+    padding:.55rem 1rem .55rem 1.1rem;
+    font-family:var(--mono);font-size:.78rem;letter-spacing:.04em;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(255,255,255,.02),transparent);
+  }
+  .ev .tag{font-weight:800;letter-spacing:.14em;font-size:.74rem}
+  .ev.in .tag{color:var(--violet)}
+  .ev.out .tag{color:var(--sky)}
+  .ev.out.ok .tag{color:var(--mint)}
+  .ev.out.err .tag{color:var(--coral)}
+  .ev .code{
+    font-family:var(--mono);font-weight:800;font-size:.72rem;
+    padding:.1rem .45rem;border-radius:4px;letter-spacing:.04em;
+  }
+  .ev.out.ok .code{color:#072a18;background:var(--mint)}
+  .ev.out.err .code{color:#2a0712;background:var(--coral)}
+  .ev .meta{color:var(--ink-faint);margin-left:auto;font-size:.72rem}
+  .ev .meta b{color:var(--ink-dim);font-weight:600}
+  .ev .meta .scope-fw{color:var(--ink-ghost)}
+  .replay{
+    font-family:var(--mono);font-size:.7rem;font-weight:800;letter-spacing:.08em;
+    color:var(--amber);border:1px solid currentColor;background:transparent;
+    padding:.22rem .55rem;border-radius:5px;cursor:pointer;
+    transition:background .15s;
+  }
+  .replay:hover{background:rgba(255,184,78,.1)}
+  .replay:disabled{opacity:.45;cursor:default}
+  .ev pre{
+    font-family:var(--mono);padding:.85rem 1.1rem;font-size:.85rem;
+    line-height:1.6;white-space:pre-wrap;word-break:break-all;
+    color:var(--ink);max-height:340px;overflow:auto;
+    background:#06091a;
+  }
+  .ev pre::-webkit-scrollbar{width:7px;height:7px}
+  .ev pre::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:99px}
+
+  /* ---------- entrance animation ---------- */
+  [data-r]{opacity:0;transform:translateY(8px);animation:rise2 .65s cubic-bezier(.2,.7,.2,1) forwards}
+  [data-r="1"]{animation-delay:.02s}[data-r="2"]{animation-delay:.12s}
+  [data-r="3"]{animation-delay:.2s}
+  @keyframes rise2{to{opacity:1;transform:none}}
+  @media(prefers-reduced-motion:reduce){[data-r]{animation:none;opacity:1;transform:none}}
+
+    /* Top-nav activity ticker — 6 tiny bars that "dance" to suggest
+       live traffic. Each bar pulses on its own offset; together they
+       read as a constantly-shifting micro-graph. */
+    .ticker{display:inline-flex;gap:2px;align-items:flex-end;height:10px;margin-right:.45rem}
+    .ticker i{display:block;width:2px;background:currentColor;border-radius:1px;opacity:.7;animation:tick 1.2s ease-in-out infinite}
+    .ticker i:nth-child(1){animation-delay:0s}
+    .ticker i:nth-child(2){animation-delay:.15s}
+    .ticker i:nth-child(3){animation-delay:.3s}
+    .ticker i:nth-child(4){animation-delay:.45s}
+    .ticker i:nth-child(5){animation-delay:.6s}
+    .ticker i:nth-child(6){animation-delay:.75s}
+    @keyframes tick{0%,100%{height:2px}50%{height:10px}}
+    @media(prefers-reduced-motion:reduce){.ticker i{animation:none;height:6px}}
+  </style>
 </head>
 <body>
-<div class="frame">
-  <header>
-    <span class="led"></span>
-    <div>
-      <h1>Wire Inspector</h1>
-      <div class="sub">raw bytes on the socket — live</div>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a class="brand" href="/">
+        <span class="mark"></span>
+        <span>PENGUIN-FORGE</span>
+        <span class="slash">/</span>
+        <span class="product">FS-FORGE</span>
+      </a>
+      <div class="nav-links">
+        <a href="/forge">Forge</a>
+        <a href="/play">World</a>
+        <a href="/_inspect" class="active">Wire</a>
+        <a href="/_data">Data</a>
+      </div>
+      <div class="spacer"></div>
+      <div id="conn" class="live-stamp wait">
+        <span class="pip"></span>
+        <span class="ticker" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span><span><b id="connlabel">connecting</b> · sse feed</span>
+      </div>
     </div>
-    <span id="conn" class="conn wait" title="SSE stream status">
-      <span class="pip"></span><span id="connlabel">connecting</span></span>
-    <div class="stamp">fs-forge<br>substrate: node:net<br>SSE live feed</div>
-  </header>
-  <div class="ctl">
-    <div class="legend"><i class="in">inbound (client → server)</i>
-      <i class="out">outbound (server → client)</i></div>
-    <label title="Show the framework's own page/asset/SSE traffic too">
-      <input type="checkbox" id="showfw"> show framework traffic</label>
-    <label><input type="checkbox" id="hex"> hex view</label>
-    <button id="pause" title="Freeze the feed while you read; new events queue and apply when you unpause">⏸ pause</button>
-    <button id="clear">clear</button>
-    <button id="labToggle" title="Hand-craft raw HTTP bytes and fire them at the server">🧪 protocol lab</button>
-    <a href="/forge">← back to console</a>
+  </nav>
+
+  <div class="frame">
+
+    <!-- ---------- HERO ---------- -->
+    <section class="hero" data-r="1">
+      <div>
+        <div class="eyebrow">framework UI · /_inspect</div>
+        <h1 class="bigtitle">Wire <span class="accent">inspector.</span></h1>
+        <p class="lede">
+          Watch the raw bytes crossing the socket in real time — every
+          <b>request line</b>, <b>header</b>, and <b>status line</b> that
+          the from-scratch parser sees, as it sees them. Pair with
+          <code>/forge</code> in another tab and send a request to fill
+          this feed; or use the <b>Protocol Lab</b> below to fire
+          deliberately malformed bytes and watch the parser react.
+        </p>
+      </div>
+      <!-- Ambient byte stream + sequenced event spotlight. The tape's
+           4 colored segments correspond to the 4 events below. Each 2s
+           of the 8s loop, ONE row's spotlight + ONE tape segment glow
+           together so the visual link "this row = these bytes" is
+           plainly readable. -->
+      <div class="ornament" aria-hidden="true">
+        <div class="ornament-head">
+          <span class="pip"></span>
+          <span class="path">tcp socket</span>
+          <span class="right">live · sse</span>
+        </div>
+        <div class="tape">
+          <div class="tape-track">
+            <span><span class="hi">47 45 54</span> 20 2F 61 70 69 0D 0A&nbsp;&nbsp;<span class="hi b">48 54 54 50</span> 2F 31 2E 31 20 32 30 30 0D 0A&nbsp;&nbsp;<span class="hi d">44 45 4C 45 54 45</span> 20 2F 61 70 69 0D 0A&nbsp;&nbsp;<span class="hi c">34 30 34</span> 20 4E 6F 74 0D 0A&nbsp;&nbsp;</span><span><span class="hi">47 45 54</span> 20 2F 61 70 69 0D 0A&nbsp;&nbsp;<span class="hi b">48 54 54 50</span> 2F 31 2E 31 20 32 30 30 0D 0A&nbsp;&nbsp;<span class="hi d">44 45 4C 45 54 45</span> 20 2F 61 70 69 0D 0A&nbsp;&nbsp;<span class="hi c">34 30 34</span> 20 4E 6F 74 0D 0A&nbsp;&nbsp;</span>
+          </div>
+        </div>
+        <div class="ow-events">
+          <div class="ow-ev in"><span class="arr">▼</span><span class="lbl">GET /api/penguins</span><span class="ms">23ms</span></div>
+          <div class="ow-ev ok"><span class="arr">▲</span><span class="lbl">200 OK · 148 B</span><span class="ms">2.1s</span></div>
+          <div class="ow-ev in"><span class="arr">▼</span><span class="lbl">DELETE /api/penguins/9</span><span class="ms">4.0s</span></div>
+          <div class="ow-ev err"><span class="arr">▲</span><span class="lbl">404 Not Found</span><span class="ms">4.0s</span></div>
+        </div>
+        <div class="ow-foot">
+          <!-- Phase-matched footer: shows the current event's conn+size
+               instead of static aggregate counts — so the foot tracks
+               the spotlight above in lockstep. -->
+          <div class="stack">
+            <span class="ph-get"><b>conn #7</b> · 62 B inbound</span>
+            <span class="ph-ok"><b>conn #7</b> · 148 B sent · application/json</span>
+            <span class="ph-del"><b>conn #8</b> · 55 B inbound</span>
+            <span class="ph-err"><b>conn #8</b> · 46 B sent · unknown id</span>
+          </div>
+          <span class="right">parser: ok</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- CONTROL BAR ---------- -->
+    <div class="ctl" data-r="2">
+      <label title="Show the framework's own page/asset/SSE traffic too">
+        <input type="checkbox" id="showfw"> <span>show framework traffic</span>
+      </label>
+      <label>
+        <input type="checkbox" id="hex"> <span>hex view</span>
+      </label>
+      <button id="pause" class="ctl-btn" title="Freeze the feed while you read; new events queue and apply when you unpause">⏸ pause</button>
+      <button id="clear" class="ctl-btn">clear</button>
+      <button id="labToggle" class="ctl-btn amber" title="Hand-craft raw HTTP bytes and fire them at the server">🧪 protocol lab</button>
+      <div class="spacer"></div>
+      <span class="count" id="evCount"></span>
+      <a href="/forge" class="back">← back to console</a>
+    </div>
+
+    <!-- ---------- PROTOCOL LAB ---------- -->
+    <section id="lab" class="lab" style="display:none">
+      <div class="lab-head">
+        <span>🧪 protocol lab</span>
+        <span class="right">edit bytes → fire → watch the parser react below</span>
+      </div>
+      <div class="lab-body">
+        <div class="lab-presets">
+          <span>presets ▸</span>
+          <button data-preset="ok">valid GET</button>
+          <button data-preset="nohost">missing Host</button>
+          <button data-preset="duphost">duplicate Host</button>
+          <button data-preset="dupcl">conflicting Content-Length</button>
+          <button data-preset="chunked">Transfer-Encoding: chunked</button>
+          <button data-preset="badmethod">unknown method</button>
+          <button data-preset="badver">bad HTTP version</button>
+          <button data-preset="pipeline">pipelined (2 in 1)</button>
+          <button data-preset="post">valid POST</button>
+        </div>
+        <textarea id="labBytes" spellcheck="false"></textarea>
+        <div class="lab-foot">
+          <button id="labSend">Send raw bytes ▸</button>
+          <span class="lab-hint">Editor uses real newlines; the framework
+            normalizes to <code>\\\\r\\\\n</code> on send — wire-correct.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- EVENT FEED ---------- -->
+    <main id="log" class="feed-col" data-r="3">
+      <div class="empty">
+        <div class="glyph">· · ·</div>
+        Awaiting traffic. Open the
+        <a href="/forge">API console</a> in another tab and send a request —
+        the bytes will appear here in real time.
+      </div>
+    </main>
+
   </div>
 
-  <!-- Protocol Lab: edit raw bytes and fire them through the real net
-       server. Presets craft deliberately malformed requests so you can
-       watch the from-scratch parser accept or reject them, live. -->
-  <section id="lab" class="lab" style="display:none">
-    <div class="lab-h">
-      🧪 PROTOCOL LAB — edit the raw bytes, hit Send, watch the parser react below
-    </div>
-    <div class="lab-presets">
-      <span>presets:</span>
-      <button data-preset="ok">valid GET</button>
-      <button data-preset="nohost">missing Host</button>
-      <button data-preset="duphost">duplicate Host</button>
-      <button data-preset="dupcl">conflicting Content-Length</button>
-      <button data-preset="chunked">Transfer-Encoding: chunked</button>
-      <button data-preset="badmethod">unknown method</button>
-      <button data-preset="badver">bad HTTP version</button>
-      <button data-preset="pipeline">pipelined (2 in 1)</button>
-      <button data-preset="post">valid POST</button>
-    </div>
-    <textarea id="labBytes" spellcheck="false"></textarea>
-    <div class="lab-foot">
-      <button id="labSend">Send raw bytes ▸</button>
-      <span class="lab-hint">Use <code>\\r\\n</code> mentally — the textarea
-      uses real newlines; the framework normalizes them to CRLF on send.</span>
-    </div>
-  </section>
-
-  <main id="log">
-    <div class="empty">Awaiting traffic… open the
-      <a href="/forge">API console</a> in another tab and send a request —
-      the bytes will appear here in real time.</div>
-  </main>
-</div>
 <script>
+  /* ============================================================
+     JS preserved from src/inspect-ui.js — same SSE endpoint, same
+     snapshot fallback, same replay/lab paths. Only DOM structure
+     and class names for the event cards changed.
+     ============================================================ */
   const log=document.getElementById('log');
   const hex=document.getElementById('hex');
   const showfw=document.getElementById('showfw');
-  const EMPTY='<div class="empty">Awaiting traffic… open the '+
-    '<a href="/forge">API console</a> in another tab and send a request — '+
-    'the bytes will appear here in real time.</div>';
-  let events=[];           // every event received, unfiltered
+  const countEl=document.getElementById('evCount');
+  const EMPTY='<div class="empty"><div class="glyph">· · ·</div>'+
+    'Awaiting traffic. Open the <a href="/forge">API console</a> in another tab '+
+    'and send a request — the bytes will appear here in real time.</div>';
+  let events=[];
   const t=ts=>new Date(ts).toISOString().slice(11,23);
 
   function visible(e){ return showfw.checked || e.scope!=='framework'; }
-
-  // An event is replayable only if it's an inbound HTTP request we
-  // captured — replaying our own response bytes would be nonsense.
   function isReplayable(e){
     return e.direction==='in' &&
       /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\\s+\\S+\\s+HTTP\\/1\\.[01]/.test(e.text);
   }
-
-  // For an outbound response, pull the status code out of the status line
-  // ("HTTP/1.1 404 Not Found") so we can colour success vs error.
   function statusOf(e){
     if(e.direction!=='out') return null;
     const m=e.text.match(/^HTTP\\/1\\.[01]\\s+(\\d{3})/);
     return m?Number(m[1]):null;
   }
 
+  function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
   function node(e){
     const dir=e.direction==='in'?'in':'out';
     const arrow=dir==='in'?'▼ INBOUND':'▲ OUTBOUND';
     const code=statusOf(e);
-    // out responses: green for <400, red for >=400. Headerless body
-    // chunks (no status line) inherit the neutral outbound colour.
     const tone=code===null?'':(code>=400?' err':' ok');
     const codeTag=code!==null
       ? ' <span class="code">'+code+'</span>' : '';
     const fw=e.scope==='framework'
-      ? ' <span style="color:var(--ink-faint)">· framework</span>' : '';
+      ? ' <span class="scope-fw">· framework</span>' : '';
     const replay=isReplayable(e)
       ? '<button class="replay" data-seq="'+e.seq+'" title="Re-fire these exact bytes via a fresh TCP connection back to the server">↻ REPLAY</button>'
       : '';
     const el=document.createElement('div');
     el.className='ev '+dir+tone;
     el.innerHTML='<div class="h"><span class="tag">'+arrow+'</span>'+codeTag+
-      '<span class="meta">conn #'+e.connId+' · '+e.bytes+' B'+
+      '<span class="meta"><b>conn #'+e.connId+'</b> · '+e.bytes+' B'+
       (e.truncated?' (trunc)':'')+fw+' · '+t(e.ts)+'</span>'+replay+
       '</div><pre></pre>';
     el.querySelector('pre').textContent=hex.checked?e.hex:e.text;
@@ -270,23 +717,25 @@ module.exports = `<!DOCTYPE html>
     setTimeout(()=>{btn.textContent='↻ REPLAY';btn.disabled=false;},1400);
   }
 
-  // "Follow tail" pattern: auto-scroll new events into view ONLY when the
-  // user is already near the bottom. If they've scrolled up to read,
-  // leave them be — otherwise the next event would yank them back down.
   function nearBottom(){
     const doc=document.documentElement;
     return (doc.scrollHeight - window.scrollY - window.innerHeight) < 120;
   }
-  function scrollIfFollowing(){
-    if(nearBottom()) window.scrollTo({top:document.documentElement.scrollHeight});
+
+  function updateCount(){
+    const shown=events.filter(visible);
+    countEl.innerHTML = shown.length
+      ? '<b>'+shown.length+'</b> event'+(shown.length===1?'':'s')+' captured'
+      : '';
   }
 
   function render(){
     const wasFollowing=nearBottom();
     const shown=events.filter(visible);
-    if(!shown.length){ log.innerHTML=EMPTY; return; }
+    if(!shown.length){ log.innerHTML=EMPTY; updateCount(); return; }
     log.innerHTML='';
     shown.forEach(e=>log.appendChild(node(e)));
+    updateCount();
     if(wasFollowing) window.scrollTo({top:document.documentElement.scrollHeight});
   }
 
@@ -297,6 +746,7 @@ module.exports = `<!DOCTYPE html>
     paused=p;
     pauseBtn.textContent=p?('▶ resume'+(queued.length?' ('+queued.length+')':'')):'⏸ pause';
     pauseBtn.style.color=p?'var(--amber)':'';
+    pauseBtn.style.borderColor=p?'rgba(255,184,78,.4)':'';
     if(!p && queued.length){
       const drain=queued; queued=[];
       drain.forEach(addLive);
@@ -306,14 +756,11 @@ module.exports = `<!DOCTYPE html>
 
   let lastSeq=0;
   function add(e){
-    // Guard against any duplicate the server might re-send across a
-    // reconnect — only ever append strictly newer events.
     if(e.seq<=lastSeq) return;
     lastSeq=e.seq;
     if(paused){
       queued.push(e);
       pauseBtn.textContent='▶ resume ('+queued.length+')';
-      // Still keep duplicate-guard sane: don't store dups.
       if(queued.length>800) queued.shift();
       return;
     }
@@ -322,11 +769,12 @@ module.exports = `<!DOCTYPE html>
   function addLive(e){
     events.push(e);
     if(events.length>400) events.shift();
-    if(!visible(e)) return;
+    if(!visible(e)){ updateCount(); return; }
     if(log.querySelector('.empty')) log.innerHTML='';
     const wasFollowing=nearBottom();
     const el=node(e);
     log.appendChild(el);
+    updateCount();
     if(wasFollowing) el.scrollIntoView({block:'end',behavior:'smooth'});
   }
 
@@ -334,28 +782,31 @@ module.exports = `<!DOCTYPE html>
   hex.onchange=render;
   document.getElementById('clear').onclick=()=>{
     queued=[];
-    // Refresh the pause button label (drops the stale "(N)" counter).
     if(paused) pauseBtn.textContent='▶ resume';
-    events=[]; log.innerHTML='<div class="empty">Cleared. Awaiting traffic…</div>';
+    events=[]; log.innerHTML='<div class="empty"><div class="glyph">· · ·</div>Cleared. Awaiting traffic…</div>';
+    updateCount();
   };
+
   const connEl=document.getElementById('conn');
   const connLabel=document.getElementById('connlabel');
   function setConn(state, label){
-    connEl.className='conn '+state;
+    connEl.className='live-stamp '+state;
     connLabel.textContent=label;
   }
-  // Primary: SSE. Fallback: poll /_inspect/snapshot every 1.2s. If SSE
-  // doesn't establish within 3s (extension/proxy blocked it, etc.), we
-  // tear it down and switch to polling so the page still works.
-  let mode=null; // 'sse' | 'poll'
+
+  let mode=null;
   let pollTimer=null;
   let pollSince=0;
 
+  let previewLocked = false;
+
   function startPolling(reason){
     if(mode==='poll') return;
+    if(previewLocked) return;
     mode='poll';
-    setConn('wait','LIVE (polling · '+reason+')');
+    setConn('wait','LIVE · polling ('+reason+')');
     async function tick(){
+      if(previewLocked) return;
       try{
         const r=await fetch('/_inspect/snapshot?since='+pollSince);
         const { events:list }=await r.json();
@@ -363,9 +814,9 @@ module.exports = `<!DOCTYPE html>
           for(const e of list) add(e);
           pollSince=Math.max(pollSince, list[list.length-1].seq);
         }
-        setConn('wait','LIVE (polling)');
+        if(!previewLocked) setConn('wait','LIVE · polling');
       }catch{
-        setConn('bad','polling failed');
+        if(!previewLocked) setConn('bad','polling failed');
       }
     }
     tick();
@@ -378,28 +829,22 @@ module.exports = `<!DOCTYPE html>
     if(mode==='sse') return;
     mode='sse'; clearTimeout(sseTimer);
     if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
-    setConn('','LIVE (SSE)');
+    setConn('','LIVE · sse');
   }
   es.onopen=promoteToSSE;
-  // The server sends a "hello" event immediately as a connection probe;
-  // it is our most reliable signal that SSE is actually working.
   es.addEventListener('hello', promoteToSSE);
   es.onerror=()=>{
+    if(previewLocked) return;
     if(mode==='sse'){ setConn('bad','SSE dropped — falling back'); }
     try{es.close();}catch{}
     startPolling('SSE error');
   };
   es.onmessage=m=>{
-    if(mode!=='sse'){ mode='sse'; clearTimeout(sseTimer); setConn('','LIVE (SSE)'); }
+    if(mode!=='sse'){ mode='sse'; clearTimeout(sseTimer); setConn('','LIVE · sse'); }
     try{ const e=JSON.parse(m.data); add(e); pollSince=Math.max(pollSince,e.seq); }catch{}
   };
 
-  // ---- Protocol Lab ---------------------------------------------------
-  // Edit raw HTTP bytes (or pick a preset) and fire them at the real
-  // server. The textarea uses ordinary newlines for editability; we
-  // normalize to CRLF before sending so it's wire-correct. The bytes go
-  // as the body of POST /_inspect/send and are fired verbatim — malformed
-  // input is the point, so the server does not validate them.
+  /* ---- Protocol Lab ---- */
   const lab=document.getElementById('lab');
   const labBytes=document.getElementById('labBytes');
   const PRESETS={
@@ -450,7 +895,6 @@ module.exports = `<!DOCTYPE html>
     b.onclick=()=>{ labBytes.value=PRESETS[b.dataset.preset]||''; labBytes.focus(); };
   });
   document.getElementById('labSend').onclick=async()=>{
-    // Normalize editor newlines to CRLF so what we send is wire-correct.
     const raw=labBytes.value.replace(/\\r\\n/g,'\\n').replace(/\\n/g,'\\r\\n');
     try{
       const r=await fetch('/_inspect/send',{
@@ -458,11 +902,50 @@ module.exports = `<!DOCTYPE html>
         headers:{'Content-Type':'application/octet-stream'},
         body:raw,
       });
-      setConn(r.ok?'':'bad', r.ok?'LIVE (SSE) · sent '+raw.length+'B':'send failed');
-      // The fired bytes hit /api/* paths (app scope), so they show in the
-      // default view — no need to flip the "show framework" filter.
+      setConn(r.ok?'':'bad', r.ok?'LIVE · sent '+raw.length+'B':'send failed');
     }catch{ setConn('bad','send failed'); }
   };
+
+  /* ------- preview-only fallback ------- */
+  // When opened standalone (no fs-forge server), neither SSE nor the
+  // /_inspect/snapshot polling endpoint exists, so seed sample events
+  // so the page isn't a blank shell. Active in any non-fs-forge context:
+  // we look for /_inspect/snapshot specifically (the canonical fs-forge
+  // endpoint) and seed if it 404s.
+  async function seedIfNoServer(){
+    try {
+      const r = await fetch('/_inspect/snapshot?since=0', { method:'GET' });
+      if (r.ok) return; // real server is here
+    } catch {}
+    previewLocked = true;
+    try { es.close(); } catch {}
+    clearTimeout(sseTimer);
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    mode = 'preview';
+    setConn('wait','PREVIEW · sample events');
+    // Seed a handful of sample events so the feed isn't empty.
+    const now=Date.now();
+    const samples=[
+      { seq:1, connId:7, direction:'in',  scope:'app',       ts:now-2300, bytes:62,
+        text:'GET /api/penguins HTTP/1.1\\r\\nHost: localhost:3000\\r\\nAccept: */*\\r\\n\\r\\n',
+        hex:'47 45 54 20 2F 61 70 69 …' },
+      { seq:2, connId:7, direction:'out', scope:'app',       ts:now-2270, bytes:148,
+        text:'HTTP/1.1 200 OK\\r\\nContent-Type: application/json\\r\\nContent-Length: 78\\r\\n\\r\\n[{"id":1,"name":"Pingu","room":"plaza"},{"id":2,"name":"Skipper","room":"cafe"}]',
+        hex:'48 54 54 50 2F 31 2E 31 …' },
+      { seq:3, connId:8, direction:'in',  scope:'app',       ts:now-1100, bytes:55,
+        text:'DELETE /api/penguins/9 HTTP/1.1\\r\\nHost: localhost:3000\\r\\n\\r\\n',
+        hex:'44 45 4C 45 54 45 20 2F …' },
+      { seq:4, connId:8, direction:'out', scope:'app',       ts:now-1070, bytes:46,
+        text:'HTTP/1.1 404 Not Found\\r\\nContent-Length: 0\\r\\n\\r\\n',
+        hex:'48 54 54 50 2F 31 2E 31 20 34 30 34 …' },
+      { seq:5, connId:9, direction:'in',  scope:'framework', ts:now-300,  bytes:74,
+        text:'GET /_routes HTTP/1.1\\r\\nHost: localhost:3000\\r\\nAccept: application/json\\r\\n\\r\\n',
+        hex:'47 45 54 20 2F 5F 72 …' },
+    ];
+    samples.forEach(add);
+  }
+  seedIfNoServer();
 </script>
 </body>
-</html>`;
+</html>
+`;

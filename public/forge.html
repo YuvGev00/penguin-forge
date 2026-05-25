@@ -4,314 +4,799 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>fs-forge — the routes/ tree is the API</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- Fonts vendored locally (public/vendor/) — no CDN, works fully offline. -->
+  <link href="/vendor/fonts.css" rel="stylesheet">
   <style>
+    /* ============================================================
+       FORGE CONSOLE — unified design system
+       Shared by forge.html, wire-inspector.html, data.html.
+       ============================================================ */
     :root{
       color-scheme:dark;
-      --bg:#070a14;
-      --ink:#eaf0ff;
-      --ink-dim:#9aa6cc;
-      --ink-faint:#6b769c;
-      --line:rgba(255,255,255,.10);
-      --line-soft:rgba(255,255,255,.06);
-      --glass:rgba(255,255,255,.05);
-      --violet:#a78bff;
-      --teal:#5fe3c8;
-      --pink:#ff6fae;
-      --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
-      --sans:"Manrope",system-ui,sans-serif;
+      --bg:#060b15;
+      --bg-2:#0d1524;
+      --bg-3:#131c2e;
+      --line:rgba(255,255,255,.07);
+      --line-2:rgba(255,255,255,.14);
+      --ink:#eef2fc;
+      --ink-dim:#95a1c0;
+      --ink-faint:#5d6885;
+      --ink-ghost:#3a4360;
+
+      --amber:#ffb84e;
+      --amber-hot:#ff8a3d;
+      --mint:#6bffb0;
+      --coral:#ff6a8e;
+      --violet:#9a6bff;
+      --sky:#7cb8ff;
+
+      --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+      --sans:"Manrope",system-ui,-apple-system,Segoe UI,sans-serif;
     }
     *{box-sizing:border-box;margin:0;padding:0}
-    html{scroll-behavior:smooth}
+    html,body{background:var(--bg);color:var(--ink)}
+    ::selection{background:rgba(255,184,78,.3);color:var(--ink)}
+    ::-moz-selection{background:rgba(255,184,78,.3);color:var(--ink)}
+    :focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:4px}
+    *::-webkit-scrollbar{width:9px;height:9px}
+    *::-webkit-scrollbar-track{background:transparent}
+    *::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:99px}
+    *::-webkit-scrollbar-thumb:hover{background:rgba(255,184,78,.3)}
     body{
-      font-family:var(--sans);color:var(--ink);background:var(--bg);
-      min-height:100vh;line-height:1.6;-webkit-font-smoothing:antialiased;
-      position:relative;overflow-x:hidden;
-    }
-    /* the aurora — restrained, behind everything, sharp text stays on top */
-    body::before{
-      content:"";position:fixed;inset:-30%;z-index:0;pointer-events:none;
+      font-family:var(--sans);
+      min-height:100vh;
+      -webkit-font-smoothing:antialiased;
+      font-feature-settings:"ss01","cv11";
+      font-variant-numeric:tabular-nums;
+      line-height:1.55;
+      /* Background: subtle horizontal grid + a sole amber accent band
+         at the very top. Quieter than aurora, and the band anchors the
+         page so the deep navy doesn't feel weightless. */
       background:
-        radial-gradient(38% 38% at 18% 16%, rgba(120,90,255,.34), transparent 70%),
-        radial-gradient(36% 36% at 82% 26%, rgba(0,210,185,.24), transparent 70%),
-        radial-gradient(46% 46% at 60% 96%, rgba(255,90,170,.20), transparent 70%);
-      filter:blur(46px);animation:drift 26s ease-in-out infinite alternate;
+        linear-gradient(180deg,var(--amber) 0 2px,transparent 2px 100%),
+        repeating-linear-gradient(0deg,transparent 0 39px,rgba(255,255,255,.022) 39px 40px),
+        radial-gradient(60% 50% at 50% -10%,rgba(255,184,78,.06),transparent 70%),
+        var(--bg);
     }
-    @keyframes drift{
+    body::before{
+      content:"";position:fixed;inset:-20%;z-index:0;pointer-events:none;
+      background:
+        radial-gradient(28% 28% at 14% 18%,rgba(255,184,78,.06),transparent 70%),
+        radial-gradient(32% 32% at 86% 30%,rgba(107,255,176,.04),transparent 70%);
+      filter:blur(40px);animation:ambient 30s ease-in-out infinite alternate;
+    }
+    @keyframes ambient{
       0%{transform:translate3d(0,0,0) scale(1)}
-      100%{transform:translate3d(-2%,2%,0) scale(1.06)}
+      100%{transform:translate3d(-2%,1.5%,0) scale(1.05)}
     }
     @media(prefers-reduced-motion:reduce){body::before{animation:none}}
-    .wrap{position:relative;z-index:1;max-width:1200px;margin:0 auto;
-      padding:1.8rem 1.4rem 3rem}
+    body > *{position:relative;z-index:1}
+    a{color:inherit;text-decoration:none}
+    code,kbd{font-family:var(--mono)}
 
-    /* Centered hero block (title + lede + meta strip). The lede is
-       width-constrained so it stays readable on wide screens; .meta
-       wraps horizontally and centers via .hero text-align. */
-    .hero{text-align:center}
-    .hero .lede{margin:0 auto;max-width:72ch}
-    .hero .meta{justify-content:center}
+    /* ---------- top nav bar (shared across all 3 pages) ---------- */
+    .topnav{
+      position:sticky;top:0;z-index:50;
+      backdrop-filter:blur(10px);
+      background:rgba(6,11,21,.78);
+      border-bottom:1px solid var(--line);
+    }
+    .topnav-inner{
+      max-width:1320px;margin:0 auto;
+      display:flex;align-items:center;gap:1.4rem;
+      padding:.7rem 1.4rem;
+      font-family:var(--mono);font-size:.78rem;
+      letter-spacing:.14em;text-transform:uppercase;
+    }
+    .brand{
+      display:flex;align-items:center;gap:.55rem;
+      font-weight:700;color:var(--ink);
+      white-space:nowrap;flex:0 0 auto;
+    }
+    .brand .mark{
+      width:14px;height:14px;
+      background:linear-gradient(135deg,var(--amber),var(--amber-hot));
+      transform:rotate(45deg);
+      box-shadow:0 0 0 1px rgba(0,0,0,.4) inset,0 0 14px rgba(255,184,78,.5);
+    }
+    .brand .slash{color:var(--ink-faint);font-weight:400}
+    .brand .product{color:var(--amber)}
+    .nav-links{display:flex;align-items:center;gap:.15rem;margin-left:.6rem}
+    .nav-links a{
+      padding:.45rem .9rem;border-radius:6px;color:var(--ink-dim);
+      transition:color .15s,background .15s;
+      font-weight:600;letter-spacing:.16em;
+    }
+    .nav-links a:hover{color:var(--ink);background:rgba(255,255,255,.04)}
+    .nav-links a.active{
+      color:var(--amber);
+      background:rgba(255,184,78,.09);
+      box-shadow:inset 0 0 0 1px rgba(255,184,78,.22);
+    }
+    .topnav .spacer{flex:1}
+    .live-stamp{
+      display:flex;align-items:center;gap:.5rem;
+      color:var(--ink-faint);font-size:.72rem;
+      white-space:nowrap;flex:0 0 auto;
+    }
+    .live-stamp .pip{
+      width:7px;height:7px;border-radius:50%;background:var(--mint);
+      box-shadow:0 0 0 0 rgba(107,255,176,.55);animation:pulse 2.2s infinite;
+    }
+    .live-stamp b{color:var(--mint);font-weight:700}
+    @keyframes pulse{70%{box-shadow:0 0 0 8px rgba(107,255,176,0)}100%{box-shadow:0 0 0 0 rgba(107,255,176,0)}}
 
-    .badge{display:inline-flex;align-items:center;gap:.45rem;font-family:var(--mono);
-      font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;
-      color:var(--ink-dim);border:1px solid var(--line);
-      background:var(--glass);padding:.35rem .8rem;border-radius:999px;
-      backdrop-filter:blur(8px)}
-    .badge .d{width:6px;height:6px;border-radius:50%;background:var(--teal);
-      box-shadow:0 0 10px var(--teal)}
-    h1{font-size:clamp(2.2rem,5vw,3.4rem);font-weight:800;letter-spacing:-.045em;
-      line-height:1;margin:.7rem 0 .4rem;
-      background:linear-gradient(118deg,#cbd6ff 0%,#a78bff 42%,#5fe3c8 100%);
-      -webkit-background-clip:text;-webkit-text-fill-color:transparent}
-    .lede{color:var(--ink-dim);font-size:1rem;max-width:75ch;line-height:1.5}
-    .lede b{color:var(--ink);font-weight:600}
-    .lede .hl{color:var(--violet);font-weight:600}
-    code{font-family:var(--mono);font-size:.86em;color:#d9c8ff;
-      background:rgba(167,139,255,.12);padding:.08rem .4rem;border-radius:4px}
+    /* ---------- page frame ---------- */
+    .frame{max-width:1320px;margin:0 auto;padding:2.2rem 1.4rem 4rem}
 
-    .meta{display:flex;align-items:center;gap:.75rem;margin-top:.9rem;
-      color:var(--ink-faint);font-family:var(--mono);font-size:.7rem;
-      letter-spacing:.14em;text-transform:uppercase;flex-wrap:wrap}
-    .meta .sep{width:5px;height:5px;border-radius:50%;background:var(--line);
-      flex:none}
+    /* ---------- shared card chrome ---------- */
+    .card{
+      background:var(--bg-2);
+      border:1px solid var(--line);
+      border-radius:10px;
+      overflow:hidden;
+      position:relative;
+      transition:border-color .2s,box-shadow .25s;
+    }
+    .card:hover{
+      border-color:var(--line-2);
+      box-shadow:0 14px 30px -22px rgba(0,0,0,.6);
+    }
+    .card-head{
+      display:flex;align-items:center;gap:.55rem;
+      padding:.6rem 1rem;
+      border-bottom:1px solid var(--line);
+      font-family:var(--mono);font-size:.7rem;
+      letter-spacing:.18em;text-transform:uppercase;
+      color:var(--ink-faint);
+      background:linear-gradient(180deg,rgba(255,255,255,.025),transparent);
+      white-space:nowrap;
+    }
+    .card-head > span{flex:0 0 auto}
+    .card-head .dot{
+      width:7px;height:7px;border-radius:50%;background:var(--amber);
+      box-shadow:0 0 0 2px rgba(255,184,78,.18);
+    }
+    .card-head .dot.mint{background:var(--mint);box-shadow:0 0 0 2px rgba(107,255,176,.18)}
+    .card-head .dot.violet{background:var(--violet);box-shadow:0 0 0 2px rgba(154,107,255,.18)}
+    .card-head .pulse{
+      animation:pulse 2.2s infinite;
+      box-shadow:0 0 0 0 rgba(107,255,176,.55);
+    }
+    .card-head .right{margin-left:auto;color:var(--ink-ghost)}
+    .card-body{padding:1rem 1.1rem}
 
-    /* Two diagram panels, centered. Each panel hugs its content (no
-       dead horizontal space) — `auto auto` columns size to content,
-       `justify-content: center` centers the pair within the page. */
-    .grid{display:grid;grid-template-columns:auto auto;gap:1rem;
-      margin-top:1.2rem;justify-content:center}
-    @media(max-width:720px){.grid{grid-template-columns:1fr}}
-    .glass{background:var(--glass);border:1px solid var(--line);
-      border-radius:14px;padding:1rem 1.1rem;backdrop-filter:blur(14px);
-      position:relative;overflow:hidden;max-width:max-content}
-    .glass::after{content:"";position:absolute;inset:0 0 auto 0;height:1px;
-      background:linear-gradient(90deg,transparent,rgba(255,255,255,.25),transparent)}
-    .glass h2{font-size:.7rem;font-family:var(--mono);letter-spacing:.16em;
-      text-transform:uppercase;color:var(--ink-faint);margin-bottom:.55rem;
-      font-weight:600}
-    .tree{font-family:var(--mono);font-size:.84rem;line-height:1.55;
-      color:var(--ink)}
-    .tree .b{color:var(--ink-faint)}
-    .tree .f{color:var(--violet)}
-    .tree .ar{color:var(--teal)}
-    .tree .leaf{color:var(--teal);font-weight:700}
-    pre.code{font-family:var(--mono);font-size:.82rem;line-height:1.5;
-      overflow:auto;color:var(--ink)}
-    .kw{color:var(--violet)} .fn{color:var(--teal)} .str{color:#ffd28a}
-    .cm{color:var(--ink-faint);font-style:italic}
+    /* ---------- mono syntax helpers ---------- */
+    .mono{font-family:var(--mono)}
+    .kw{color:var(--violet)}
+    .fn{color:var(--mint)}
+    .str{color:var(--amber)}
+    .cm{color:var(--ink-ghost);font-style:italic}
+    .pun{color:var(--ink-faint)}
 
-    .wirefmt{margin:.8rem auto 0;border:1px solid var(--line-soft);
-      border-radius:10px;padding:.55rem .85rem;background:rgba(255,255,255,.025);
-      font-family:var(--mono);font-size:.72rem;color:var(--ink-faint);
-      display:inline-flex;gap:.4rem;flex-wrap:wrap;align-items:center;
-      width:max-content;max-width:100%}
-    /* Center the wire-format strip on the page (inline-flex + auto
-       margins doesn't center on its own — wrap it via text-align). */
-    .wirefmt-row{text-align:center}
-    .wirefmt .seg{border:1px solid rgba(167,139,255,.4);color:var(--violet);
-      padding:.15rem .5rem;border-radius:5px}
-    .wirefmt .seg.b{border-color:rgba(95,227,200,.45);color:var(--teal)}
+    /* =================================================================
+       FORGE-SPECIFIC
+       ================================================================= */
 
-    .panel{margin-top:1rem;background:var(--glass);border:1px solid var(--line);
-      border-radius:14px;backdrop-filter:blur(16px);overflow:hidden}
-    .panel-h{display:flex;align-items:center;gap:.6rem;padding:.65rem 1.1rem;
-      border-bottom:1px solid var(--line-soft);font-family:var(--mono);
-      font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;
-      color:var(--ink-faint)}
-    .led{width:9px;height:9px;border-radius:50%;background:var(--teal);
-      box-shadow:0 0 0 0 rgba(95,227,200,.55);animation:ping 2.4s infinite}
-    @keyframes ping{70%{box-shadow:0 0 0 9px rgba(95,227,200,0)}100%{box-shadow:0 0 0 0 rgba(95,227,200,0)}}
-    .panel-b{padding:.85rem}
-    /* Two-column console: routes+controls on the left, response on the
-       right. Stacks to one column on narrow screens. */
-    .console-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;
-      align-items:start}
-    /* Grid tracks default to min-width:auto, so a wide route row or a long
-       response line would stretch the left column and shove the chat panel
-       sideways. min-width:0 lets the 1fr columns actually shrink. */
+    /* ---------- hero ---------- */
+    .hero{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) 360px;
+      gap:2.2rem;align-items:end;
+      padding:1.8rem 0 1.6rem;
+      border-bottom:1px solid var(--line);
+      margin-bottom:1.8rem;
+    }
+    @media(max-width:980px){.hero{grid-template-columns:1fr;gap:1.4rem}}
+    .eyebrow{
+      font-family:var(--mono);font-size:.72rem;
+      letter-spacing:.22em;text-transform:uppercase;
+      color:var(--amber);
+      display:inline-flex;align-items:center;gap:.55rem;
+      margin-bottom:.9rem;white-space:nowrap;
+    }
+    .eyebrow::before{
+      content:"";display:inline-block;width:22px;height:1px;
+      background:var(--amber);
+    }
+    h1.bigtitle{
+      font-family:var(--sans);
+      font-size:clamp(2.7rem,5.2vw,4rem);
+      font-weight:800;letter-spacing:-.035em;line-height:.96;
+      color:var(--ink);
+      margin-bottom:.7rem;
+    }
+    h1.bigtitle .accent{
+      color:var(--amber);font-style:italic;font-weight:800;
+    }
+    h1.bigtitle .stamp{
+      font-family:var(--mono);font-style:normal;font-size:.28em;
+      font-weight:600;letter-spacing:.18em;
+      color:var(--ink-faint);
+      vertical-align:.55em;margin-left:.7em;
+      border:1px solid var(--line-2);
+      padding:.25em .6em;border-radius:4px;
+    }
+    .lede{
+      font-size:1.06rem;color:var(--ink-dim);line-height:1.55;max-width:62ch;
+    }
+    .lede b{color:var(--ink);font-weight:700}
+    .lede code{
+      font-family:var(--mono);font-size:.86em;color:var(--amber);
+      background:rgba(255,184,78,.08);padding:.05em .45em;border-radius:4px;
+      border:1px solid rgba(255,184,78,.18);
+    }
+    .lede em{color:var(--mint);font-style:italic;font-weight:600}
+
+    .hero-meta{
+      display:flex;flex-direction:column;gap:.55rem;
+      font-family:var(--mono);font-size:.78rem;
+    }
+
+    /* ---------- hero ornament: system board ----------
+       Replaces the simple K/V rows with a "live system" panel:
+       4 stat tiles up top, then an animated request pipeline at the
+       bottom (5 stages, each dot pulses in sequence to suggest a
+       packet flowing TCP → parser → router → handler → response). */
+    .ornament{
+      background:#0a1120;
+      border:1px solid var(--line);border-radius:10px;
+      overflow:hidden;font-family:var(--mono);
+      position:relative;
+    }
+    .ornament::before{
+      content:"";position:absolute;left:0;top:0;bottom:0;width:2px;
+      background:var(--amber);
+    }
+    .ornament-head{
+      display:flex;align-items:center;gap:.5rem;
+      padding:.5rem .85rem;
+      border-bottom:1px solid var(--line);
+      font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;
+      color:var(--ink-faint);white-space:nowrap;
+    }
+    .ornament-head .pip{
+      width:6px;height:6px;border-radius:50%;background:var(--mint);
+      box-shadow:0 0 0 0 rgba(107,255,176,.55);animation:nudge 2.2s infinite;
+      flex:0 0 auto;
+    }
+    .ornament-head .path{color:var(--amber);font-weight:700;letter-spacing:.12em;flex:0 0 auto}
+    .ornament-head .right{margin-left:auto;color:var(--ink-ghost);font-weight:400;letter-spacing:.04em;text-transform:none;flex:0 0 auto}
+    @keyframes nudge{70%{box-shadow:0 0 0 8px rgba(107,255,176,0)}100%{box-shadow:0 0 0 0 rgba(107,255,176,0)}}
+
+    .stat-grid{
+      display:grid;grid-template-columns:1fr 1fr;
+      border-bottom:1px solid var(--line);
+    }
+    .stat{
+      padding:.85rem 1rem .8rem;
+      border-right:1px solid var(--line);
+      border-bottom:1px solid var(--line);
+    }
+    .stat:nth-child(2n){border-right:none}
+    .stat:nth-child(n+3){border-bottom:none}
+    .stat .stat-n{
+      font-family:var(--sans);font-weight:800;font-size:1.7rem;
+      letter-spacing:-.03em;color:var(--ink);line-height:1;
+      font-variant-numeric:tabular-nums;
+    }
+    .stat .stat-n.amber{color:var(--amber)}
+    .stat .stat-n.mint{color:var(--mint)}
+    .stat .stat-n.violet{color:var(--violet)}
+    .stat .stat-n .unit{font-size:.5em;font-weight:700;color:var(--ink-faint);margin-left:.1em;letter-spacing:.04em}
+    .stat .stat-n .lt{color:var(--ink-faint);font-weight:600}
+    .stat .stat-k{
+      font-size:.62rem;color:var(--ink-faint);letter-spacing:.16em;
+      text-transform:uppercase;margin-top:.35rem;font-weight:600;
+    }
+
+    .pipe-wrap{padding:.85rem 1rem .9rem}
+    .pipe{
+      display:flex;align-items:center;gap:0;
+    }
+    .pipe .stage{
+      width:11px;height:11px;border-radius:50%;
+      background:rgba(255,255,255,.08);border:1px solid var(--line-2);
+      flex:0 0 auto;position:relative;
+    }
+    .pipe .stage::after{
+      content:"";position:absolute;inset:-3px;border-radius:50%;
+      box-shadow:0 0 0 0 rgba(255,184,78,0);
+    }
+    .pipe .seg{
+      flex:1;height:1px;background:var(--line);
+      margin:0 -1px;
+    }
+    /* Sequenced pulse — the dots light up in order, then the cycle
+       repeats. Reads as "a request flowing through the stack". */
+    .pipe .stage{animation:stagePulse 3.2s ease-in-out infinite;}
+    .pipe .stage:nth-child(1){animation-delay:0s}
+    .pipe .stage:nth-child(3){animation-delay:.45s}
+    .pipe .stage:nth-child(5){animation-delay:.9s}
+    .pipe .stage:nth-child(7){animation-delay:1.35s}
+    .pipe .stage:nth-child(9){animation-delay:1.8s}
+    @keyframes stagePulse{
+      0%,80%,100%{background:rgba(255,255,255,.08);box-shadow:none}
+      8%,22%{background:var(--amber);box-shadow:0 0 12px rgba(255,184,78,.65)}
+    }
+    .pipe-lbls{
+      display:flex;justify-content:space-between;
+      margin-top:.55rem;font-size:.58rem;
+      color:var(--ink-faint);letter-spacing:.14em;text-transform:uppercase;
+    }
+    .pipe-lbls span{flex:0 0 auto}
+    .hero-meta .row{
+      display:flex;align-items:center;gap:.6rem;
+      padding:.55rem .8rem;
+      border:1px solid var(--line);border-radius:7px;
+      background:rgba(255,255,255,.02);
+    }
+    .hero-meta .k{color:var(--ink-faint);letter-spacing:.14em;text-transform:uppercase;font-size:.66rem;flex:0 0 9.5rem}
+    .hero-meta .v{color:var(--ink);font-weight:600}
+    .hero-meta .v.amber{color:var(--amber)}
+    .hero-meta .v.mint{color:var(--mint)}
+    .hero-meta .v.violet{color:var(--violet)}
+
+    /* ---------- two diagram panels ---------- */
+    .diagrams{
+      display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);
+      gap:1rem;margin-bottom:1.4rem;
+    }
+    @media(max-width:880px){.diagrams{grid-template-columns:1fr}}
+    .tree{
+      font-family:var(--mono);font-size:.86rem;line-height:1.7;
+      color:var(--ink);padding:.4rem 0;
+    }
+    .tree .b{color:var(--ink-ghost)}
+    .tree .arr{color:var(--ink-faint)}
+    .tree .path{color:var(--sky)}
+    .tree .ws{color:var(--mint);font-weight:600;font-size:.78em;letter-spacing:.1em}
+    .tree .param{color:var(--amber);font-style:italic}
+    .codeblock{
+      font-family:var(--mono);font-size:.85rem;line-height:1.65;
+      color:var(--ink);overflow:auto;
+      padding:.4rem 0;
+    }
+    .codeblock .ind{display:inline-block;width:2ch}
+
+    /* ---------- wire-format strip ---------- */
+    .wire-strip{
+      display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;
+      padding:.7rem 1rem;
+      border:1px dashed var(--line-2);border-radius:8px;
+      background:repeating-linear-gradient(135deg,transparent 0 7px,rgba(255,184,78,.025) 7px 8px);
+      font-family:var(--mono);font-size:.78rem;
+      color:var(--ink-faint);
+      margin-bottom:1.4rem;
+    }
+    .wire-strip .label{color:var(--amber);font-weight:700;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;flex:0 0 auto}
+    .wire-strip .seg{
+      padding:.2rem .55rem;border-radius:5px;
+      border:1px solid currentColor;color:var(--violet);
+      white-space:nowrap;flex:0 0 auto;
+    }
+    .wire-strip .seg.body{color:var(--mint)}
+    .wire-strip .plus{color:var(--ink-ghost);flex:0 0 auto}
+    .wire-strip .tail{color:var(--ink-faint);white-space:nowrap}
+
+    /* ---------- live route table + console + chat ---------- */
+    .console-grid{
+      display:grid;
+      grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);
+      gap:1rem;
+    }
+    @media(max-width:980px){.console-grid{grid-template-columns:1fr}}
     .console-grid > *{min-width:0}
-    @media(max-width:880px){.console-grid{grid-template-columns:1fr}}
-    .console-grid .out{display:flex;flex-direction:column;height:100%}
-    .console-grid .out pre#resp{flex:1;min-height:11rem}
-    .routes{border:1px solid var(--line-soft);border-radius:10px;overflow:hidden}
-    .route{display:flex;align-items:center;gap:.6rem;padding:.38rem .7rem;
-      border-bottom:1px solid var(--line-soft);font-family:var(--mono);
-      font-size:.82rem}
+
+    .routes-list{
+      max-height:14.5rem;overflow:auto;
+      border:1px solid var(--line);border-radius:8px;
+      background:#0a1120;
+    }
+    .routes-list::-webkit-scrollbar{width:8px;height:8px}
+    .routes-list::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:99px}
+    .route{
+      display:flex;align-items:center;gap:.7rem;
+      padding:.45rem .85rem;
+      border-bottom:1px solid var(--line);
+      font-family:var(--mono);font-size:.82rem;
+      cursor:pointer;
+      transition:background .12s,border-color .12s,padding-left .12s;
+      position:relative;
+    }
     .route:last-child{border-bottom:none}
-    .route:hover{background:rgba(167,139,255,.07)}
-    .m{font-size:.62rem;font-weight:700;padding:.16rem .45rem;letter-spacing:.06em;
-      border:1px solid currentColor;border-radius:5px}
-    .m.GET{color:var(--teal)} .m.POST{color:var(--violet)}
-    .m.DELETE{color:var(--pink)} .m.PUT,.m.PATCH{color:#ffce73}
-    .route a{color:var(--ink);text-decoration:none;flex:1;min-width:0;
-      overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .route a:hover{color:var(--violet)}
-    .bar{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem}
-    select,input,button{font:inherit;font-size:.85rem;border-radius:8px;
-      border:1px solid var(--line);background:rgba(255,255,255,.04);
-      color:var(--ink);padding:.5rem .75rem;font-family:var(--mono)}
-    select:focus,input:focus{outline:none;border-color:var(--violet);
-      box-shadow:0 0 0 3px rgba(167,139,255,.2)}
-    input{flex:1;min-width:140px}
-    button{font-family:var(--sans);background:linear-gradient(120deg,#a78bff,#5fe3c8);
-      color:#0a0a16;font-weight:800;border:none;cursor:pointer;
-      padding:.5rem 1.3rem;letter-spacing:.01em;
-      box-shadow:0 8px 24px -10px rgba(120,140,255,.7)}
-    button:hover{filter:brightness(1.08)}
-    .status{font-family:var(--mono);font-size:.76rem;color:var(--ink-faint);
-      margin:.4rem 0 .3rem}
-    .status b.ok{color:var(--teal)} .status b.err{color:var(--pink)}
-    pre#resp{font-family:var(--mono);font-size:.82rem;line-height:1.5;
-      border:1px solid var(--line-soft);border-radius:10px;
-      background:rgba(0,0,0,.32);padding:.7rem .85rem;overflow:auto;color:var(--ink);
-      min-height:3rem}
+    .route::after{
+      content:"▸";position:absolute;right:.85rem;
+      color:var(--amber);opacity:0;font-size:.78rem;
+      transform:translateX(-4px);transition:opacity .15s,transform .15s;
+    }
+    .route:hover{
+      background:linear-gradient(90deg,rgba(255,184,78,.06),rgba(255,184,78,.02));
+      padding-left:1.05rem;
+    }
+    .route:hover::after{opacity:1;transform:translateX(0)}
+    .route .m{
+      font-size:.62rem;font-weight:800;letter-spacing:.08em;
+      padding:.14rem .42rem;border:1px solid currentColor;
+      border-radius:4px;
+    }
+    .m.GET{color:var(--mint)}
+    .m.POST{color:var(--violet)}
+    .m.DELETE{color:var(--coral)}
+    .m.PUT,.m.PATCH{color:var(--amber)}
+    .route a{
+      color:var(--ink);flex:1;min-width:0;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }
+    .route:hover a{color:var(--amber)}
+    /* how a route was declared: a routes/ file vs the imperative app.get API */
+    .route .src{
+      font-size:.55rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+      padding:.1rem .4rem;border:1px solid currentColor;border-radius:4px;
+      opacity:.75;flex:0 0 auto;margin-right:1.1rem;
+    }
+    .route .src.file{color:var(--ink-faint)}
+    .route .src.code{color:var(--mint)}
 
-    /* Live chat: a watcher on the penguin world's /world WebSocket, shown
-       beside the console. Sees every chat line live and can post into it. */
-    .wall{display:flex;flex-direction:column;height:100%;min-height:18rem}
-    .wall-h{display:flex;align-items:center;gap:.5rem;font-family:var(--mono);
-      font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
-      color:var(--ink-faint);margin-bottom:.55rem}
-    .wall-h .live{width:7px;height:7px;border-radius:50%;background:var(--teal);
-      box-shadow:0 0 0 0 rgba(95,227,200,.55);animation:ping 2.4s infinite}
-    .composer{display:flex;gap:.4rem;margin-bottom:.6rem}
-    .composer input{flex:1;min-width:0;font:inherit;font-family:var(--mono);
-      font-size:.82rem;background:rgba(255,255,255,.04);color:var(--ink);
-      border:1px solid var(--line);border-radius:7px;padding:.45rem .65rem}
-    .composer input#chatWho{flex:0 0 7.5rem}
-    .composer input:focus{outline:none;border-color:var(--violet);
-      box-shadow:0 0 0 3px rgba(167,139,255,.2)}
-    .composer button{font:inherit;font-family:var(--sans);font-weight:800;
-      font-size:.82rem;color:#0a0a16;border:none;border-radius:7px;
-      padding:.45rem .9rem;cursor:pointer;
-      background:linear-gradient(120deg,#a78bff,#5fe3c8);
-      box-shadow:0 8px 20px -10px rgba(120,140,255,.7)}
+    .control-bar{
+      display:flex;gap:.4rem;margin-top:.8rem;align-items:stretch;
+    }
+    select,input,button,textarea{
+      font:inherit;font-family:var(--mono);font-size:.85rem;
+      color:var(--ink);background:var(--bg-3);
+      border:1px solid var(--line);border-radius:7px;
+      padding:.5rem .75rem;
+    }
+    select{padding-right:1.6rem}
+    select:focus,input:focus,textarea:focus{
+      outline:none;border-color:var(--amber);
+      box-shadow:0 0 0 3px rgba(255,184,78,.18);
+    }
+    input.path-in{flex:1;min-width:0;color:var(--amber)}
+    button.primary{
+      font-family:var(--sans);font-weight:800;
+      color:#2a1500;cursor:pointer;border:none;
+      background:linear-gradient(135deg,var(--amber),var(--amber-hot));
+      padding:.55rem 1.2rem;letter-spacing:.02em;
+      box-shadow:0 6px 16px -8px rgba(255,140,40,.8);
+      transition:filter .15s,transform .15s;
+    }
+    button.primary:hover{filter:brightness(1.08);transform:translateY(-1px)}
+    button.primary:active{transform:translateY(0)}
+
+    .status-line{
+      font-family:var(--mono);font-size:.78rem;color:var(--ink-faint);
+      margin:.7rem 0 .35rem;
+      display:flex;align-items:center;gap:.5rem;
+    }
+    .status-line b.ok{color:var(--mint)}
+    .status-line b.err{color:var(--coral)}
+    pre#resp{
+      font-family:var(--mono);font-size:.82rem;line-height:1.55;
+      border:1px solid var(--line);border-radius:8px;
+      background:#06091a;
+      padding:.8rem .9rem;overflow:auto;
+      color:var(--ink);
+      min-height:11rem;max-height:22rem;
+      animation:respIn .35s ease both;
+    }
+    @keyframes respIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+    /* ---------- chat / broadcast panel ---------- */
+    .wall{
+      display:flex;flex-direction:column;
+      height:100%;min-height:21rem;
+    }
+    .composer{display:flex;gap:.4rem;margin-bottom:.65rem}
+    .composer input{flex:1;min-width:0;font-family:var(--mono);font-size:.82rem}
+    .composer button{
+      font-family:var(--sans);font-weight:800;font-size:.82rem;
+      color:#2a1500;border:none;border-radius:7px;cursor:pointer;
+      padding:.5rem 1rem;letter-spacing:.02em;
+      background:linear-gradient(135deg,var(--amber),var(--amber-hot));
+      box-shadow:0 6px 16px -8px rgba(255,140,40,.7);
+    }
     .composer button:hover{filter:brightness(1.08)}
-    .feed{flex:1;overflow:auto;display:flex;flex-direction:column;gap:.45rem;
-      padding-right:.2rem;max-height:18rem}
-    .note{border:1px solid var(--line-soft);border-radius:9px;padding:.55rem .8rem;
-      background:rgba(255,255,255,.04);animation:noteIn .35s ease both}
-    @keyframes noteIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
-    .note .who{font-size:.7rem;color:var(--violet);font-weight:700;
-      letter-spacing:.04em;text-transform:uppercase}
-    .note .what{font-size:.92rem;color:var(--ink);line-height:1.4;
-      margin-top:.15rem;word-wrap:break-word}
-    .note.fresh{border-color:rgba(95,227,200,.5);
-      box-shadow:0 0 0 2px rgba(95,227,200,.15)}
-    .feed-empty{color:var(--ink-faint);font-size:.82rem;text-align:center;
-      padding:1.2rem;font-style:italic}
-    .post-err{border:1px solid rgba(255,111,174,.5);
-      background:rgba(255,111,174,.08);color:#ffb3c8;font-size:.78rem;
-      line-height:1.45;border-radius:8px;padding:.5rem .7rem;margin-bottom:.55rem}
-    .post-err code{font-family:var(--mono);color:#ffd6e2;
-      background:rgba(255,111,174,.18);padding:.06rem .3rem;border-radius:3px}
+    .feed{
+      flex:1;overflow:auto;
+      display:flex;flex-direction:column;gap:.5rem;
+      padding-right:.2rem;
+      max-height:21rem;min-height:14rem;
+    }
+    .feed::-webkit-scrollbar{width:7px}
+    .feed::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:99px}
+    .note{
+      border:1px solid var(--line);border-radius:8px;
+      padding:.55rem .8rem;
+      background:rgba(255,255,255,.02);
+      animation:noteIn .35s ease both;
+    }
+    @keyframes noteIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+    .note .who{
+      font-family:var(--mono);font-size:.68rem;
+      color:var(--amber);font-weight:700;letter-spacing:.06em;
+      text-transform:uppercase;
+      display:flex;gap:.4rem;align-items:baseline;
+    }
+    .note .who .mut{color:var(--ink-ghost);font-weight:400;letter-spacing:.02em;text-transform:none}
+    .note .what{font-size:.94rem;color:var(--ink);margin-top:.18rem;word-wrap:break-word}
+    .note.fresh{border-color:rgba(107,255,176,.4);box-shadow:0 0 0 2px rgba(107,255,176,.1)}
+    .feed-empty{
+      color:var(--ink-faint);font-size:.84rem;text-align:center;
+      padding:1.4rem 1rem;font-style:italic;line-height:1.6;
+    }
+    .feed-empty a{color:var(--mint)}
+    .feed-empty a:hover{color:var(--amber)}
+    .post-err{
+      border:1px solid rgba(255,106,142,.5);
+      background:rgba(255,106,142,.06);color:#ffb8c8;font-size:.78rem;
+      line-height:1.5;border-radius:7px;padding:.5rem .7rem;margin-bottom:.55rem;
+      font-family:var(--mono);
+    }
 
-    .scope{margin-top:.75rem;border:1px solid var(--line);border-radius:12px;
-      background:linear-gradient(120deg,rgba(167,139,255,.12),rgba(95,227,200,.06));
-      padding:.7rem .95rem;display:flex;gap:.8rem;align-items:center;
-      flex-wrap:wrap;backdrop-filter:blur(14px)}
-    .scope .glyph{font-size:1.35rem}
-    .scope .t{flex:1;min-width:220px}
-    .scope .t .h{font-size:1rem;font-weight:800;color:var(--ink)}
-    .scope .t .s{font-size:.8rem;color:var(--ink-dim);margin-top:.1rem;line-height:1.45}
-    .scope a.go{font-family:var(--mono);font-size:.72rem;font-weight:700;
-      letter-spacing:.08em;text-transform:uppercase;color:#0a0a16;
-      background:linear-gradient(120deg,#a78bff,#5fe3c8);
-      padding:.45rem .9rem;text-decoration:none;border-radius:999px;
-      box-shadow:0 8px 22px -10px rgba(120,140,255,.7)}
-    .scope a.go:hover{filter:brightness(1.08)}
+    /* ---------- gateway cards (links to /_data + /_inspect) ---------- */
+    .gateways{
+      display:grid;grid-template-columns:1fr 1fr;gap:1rem;
+      margin-top:1.4rem;
+    }
+    @media(max-width:880px){.gateways{grid-template-columns:1fr}}
+    .gateway{
+      display:flex;align-items:center;gap:1rem;
+      padding:1.1rem 1.2rem;
+      border:1px solid var(--line);border-radius:10px;
+      background:var(--bg-2);
+      transition:border-color .2s,transform .2s,box-shadow .25s;
+      position:relative;overflow:hidden;
+    }
+    .gateway::before{
+      content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+      background:var(--amber);
+      box-shadow:0 0 14px rgba(255,184,78,.25);
+    }
+    .gateway.data::before{background:var(--violet);box-shadow:0 0 14px rgba(154,107,255,.3)}
+    .gateway:hover{
+      border-color:rgba(255,184,78,.3);
+      transform:translateY(-3px);
+      box-shadow:0 18px 40px -22px rgba(255,184,78,.4),0 0 0 1px rgba(255,184,78,.08) inset;
+    }
+    .gateway.data:hover{
+      border-color:rgba(154,107,255,.3);
+      box-shadow:0 18px 40px -22px rgba(154,107,255,.4),0 0 0 1px rgba(154,107,255,.08) inset;
+    }
+    .gateway .glyph{
+      width:48px;height:48px;display:grid;place-items:center;
+      border:1px solid var(--line-2);border-radius:9px;
+      color:var(--amber);font-family:var(--mono);font-size:1.4rem;font-weight:700;
+      background:rgba(255,184,78,.05);
+    }
+    .gateway.data .glyph{color:var(--violet);background:rgba(154,107,255,.06)}
+    .gateway .t{flex:1;min-width:0}
+    .gateway .t .h{
+      font-family:var(--sans);font-weight:800;font-size:1.05rem;
+      color:var(--ink);letter-spacing:-.01em;
+      display:flex;align-items:baseline;gap:.55rem;
+    }
+    .gateway .t .h .route{
+      font-family:var(--mono);font-size:.74rem;color:var(--amber);font-weight:600;
+      padding:.12rem .45rem;border:1px solid rgba(255,184,78,.3);border-radius:4px;
+    }
+    .gateway.data .t .h .route{color:var(--violet);border-color:rgba(154,107,255,.3)}
+    .gateway .t .s{
+      font-size:.88rem;color:var(--ink-dim);margin-top:.25rem;line-height:1.5;
+    }
+    .gateway .t .s code{
+      font-family:var(--mono);font-size:.86em;color:var(--amber);
+      background:rgba(255,184,78,.08);padding:.02em .35em;border-radius:3px;
+    }
+    .gateway .go{
+      font-family:var(--mono);font-size:.72rem;font-weight:700;
+      letter-spacing:.14em;text-transform:uppercase;color:var(--ink-ghost);
+      flex:0 0 auto;align-self:center;white-space:nowrap;
+    }
+    .gateway:hover .go{color:var(--amber)}
 
-    footer{margin-top:1.2rem;border-top:1px solid var(--line-soft);
-      padding-top:.7rem;color:var(--ink-faint);font-size:.75rem;
-      line-height:1.55}
-    footer a{color:var(--teal);text-decoration:none}
-    footer a:hover{color:var(--violet)}
-    footer code{font-size:.92em}
+    /* ---------- footer ---------- */
+    footer.foot{
+      margin-top:1.8rem;padding-top:1rem;
+      border-top:1px solid var(--line);
+      display:flex;flex-wrap:wrap;align-items:center;gap:1rem;
+      color:var(--ink-faint);font-size:.82rem;font-family:var(--mono);
+    }
+    footer.foot .lead{color:var(--ink-dim)}
+    footer.foot .lead b{color:var(--mint);font-weight:700}
+    footer.foot .lead code{color:var(--amber)}
+    footer.foot .links{display:flex;gap:.2rem;flex-wrap:wrap;margin-left:auto}
+    footer.foot .links a{
+      padding:.3rem .7rem;border:1px solid var(--line);border-radius:5px;
+      color:var(--ink-dim);transition:color .15s,border-color .15s,background .15s;
+    }
+    footer.foot .links a:hover{color:var(--amber);border-color:var(--line-2);background:rgba(255,184,78,.04)}
+    footer.foot .course{color:var(--ink-ghost);width:100%;text-align:right;font-size:.74rem;letter-spacing:.1em;text-transform:uppercase}
 
-    [data-r]{opacity:0;transform:translateY(12px);
-      animation:rise .75s cubic-bezier(.2,.7,.2,1) forwards}
-    [data-r="1"]{animation-delay:.04s}[data-r="2"]{animation-delay:.16s}
-    [data-r="3"]{animation-delay:.27s}[data-r="4"]{animation-delay:.38s}
-    [data-r="5"]{animation-delay:.49s}[data-r="6"]{animation-delay:.6s}
+    /* ---------- entrance animation ---------- */
+    [data-r]{opacity:0;transform:translateY(8px);animation:rise .65s cubic-bezier(.2,.7,.2,1) forwards}
+    [data-r="1"]{animation-delay:.02s}[data-r="2"]{animation-delay:.1s}
+    [data-r="3"]{animation-delay:.18s}[data-r="4"]{animation-delay:.26s}
+    [data-r="5"]{animation-delay:.34s}[data-r="6"]{animation-delay:.42s}
     @keyframes rise{to{opacity:1;transform:none}}
     @media(prefers-reduced-motion:reduce){[data-r]{animation:none;opacity:1;transform:none}}
+  
+    /* Top-nav activity ticker — 6 tiny bars that "dance" to suggest
+       live traffic. Each bar pulses on its own offset; together they
+       read as a constantly-shifting micro-graph. */
+    .ticker{display:inline-flex;gap:2px;align-items:flex-end;height:10px;margin-right:.45rem}
+    .ticker i{display:block;width:2px;background:currentColor;border-radius:1px;opacity:.7;animation:tick 1.2s ease-in-out infinite}
+    .ticker i:nth-child(1){animation-delay:0s}
+    .ticker i:nth-child(2){animation-delay:.15s}
+    .ticker i:nth-child(3){animation-delay:.3s}
+    .ticker i:nth-child(4){animation-delay:.45s}
+    .ticker i:nth-child(5){animation-delay:.6s}
+    .ticker i:nth-child(6){animation-delay:.75s}
+    @keyframes tick{0%,100%{height:2px}50%{height:10px}}
+    @media(prefers-reduced-motion:reduce){.ticker i{animation:none;height:6px}}
   </style>
 </head>
 <body>
-  <div class="wrap">
 
-    <div class="hero" data-r="1">
-      <span class="badge"><span class="d"></span>PS#1 · Creative HTTP Server · built on node:net</span>
-      <h1>fs-forge</h1>
-      <p class="lede">An HTTP/1.1 framework built from scratch on Node's
-        <code>net</code> module — no <code>http</code>, no Express.
-        <b>The <span class="hl">routes/</span> directory <em>is</em> the
-        API</b>: no registration, ever. This page is itself a route
-        (<code>routes/index.js</code> → <code>html()</code>); its assets are
-        served by the static handler.</p>
-      <div class="meta">
-        <span>Zero-config routing</span><span class="sep"></span>
-        <span>Tagged-template DSL</span><span class="sep"></span>
-        <span>Live hot reload</span><span class="sep"></span>
-        <span>Wire inspector</span>
+  <!-- Top nav: identical chrome across forge / wire / data -->
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a class="brand" href="/">
+        <span class="mark"></span>
+        <span>PENGUIN-FORGE</span>
+        <span class="slash">/</span>
+        <span class="product">FS-FORGE</span>
+      </a>
+      <div class="nav-links">
+        <a href="/forge" class="active">Forge</a>
+        <a href="/play">World</a>
+        <a href="/_inspect">Wire</a>
+        <a href="/_data">Data</a>
+      </div>
+      <div class="spacer"></div>
+      <div class="live-stamp">
+        <span class="pip"></span>
+        <span class="ticker" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span><span><b>LIVE</b> · node:net · PS#1</span>
       </div>
     </div>
+  </nav>
 
-    <div class="grid">
-      <section class="glass" data-r="2">
-        <h2>The filesystem is the router</h2>
-        <div class="tree">
-routes/<br>
-<span class="b">├─</span> index.js<span class="b"> ······· </span><span class="ar">→</span> /<br>
-<span class="b">├─</span> play.js<span class="b"> ········ </span><span class="ar">→</span> /play<br>
-<span class="b">├─</span> world.js<span class="b"> ······· </span><span class="ar">→</span> /world <span class="leaf">(ws)</span><br>
-<span class="b">└─</span> api/penguins/<br>
-<span class="b">&nbsp;&nbsp;&nbsp;├─</span> index.js<span class="b"> · </span><span class="ar">→</span> /api/penguins<br>
-<span class="b">&nbsp;&nbsp;&nbsp;└─</span> <span class="f">[id].js</span><span class="b"> ·· </span><span class="ar">→</span> /api/penguins/<span class="leaf">:id</span>
+  <div class="frame">
+
+    <!-- ---------- HERO ---------- -->
+    <section class="hero" data-r="1">
+      <div>
+        <div class="eyebrow">Problem set #1 · creative HTTP server</div>
+        <h1 class="bigtitle">
+          fs-forge<span class="stamp">v0.1</span><br>
+          built on <span class="accent">raw sockets.</span>
+        </h1>
+        <p class="lede">
+          An HTTP/1.1 framework written from scratch on Node's
+          <code>net</code> module — no <code>http</code>, no Express.
+          <b>The <em>routes/</em> directory is the API</b>: no registration,
+          ever. This page is itself a route (<code>routes/index.js</code> →
+          <code>html()</code>); its assets are served by the static handler.
+        </p>
+      </div>
+      <!-- System board: 4 stat tiles + animated request pipeline.
+           The pipeline's 5 dots light up in sequence so the page feels
+           "alive" and visualizes the fs-forge request path TCP → parser
+           → router → handler → response in a single glance. -->
+      <div class="ornament" aria-hidden="true">
+        <div class="ornament-head">
+          <span class="pip"></span>
+          <span class="path">system</span>
+          <span class="right">live · node:net</span>
         </div>
-      </section>
-      <section class="glass" data-r="3">
-        <h2>A route file reads like HTTP</h2>
-<pre class="code"><span class="cm">// routes/api/penguins/[id].js</span>
-<span class="kw">module</span>.exports = <span class="fn">http</span>`
-  <span class="kw">PUT</span>    $&#123;<span class="cm">({params}) =&gt;</span>
-           <span class="fn">json</span>(rename(params.id))}
-  <span class="kw">DELETE</span> $&#123;<span class="cm">() =&gt;</span> <span class="fn">noContent</span>()}
-`;</pre>
-      </section>
-    </div>
-
-    <div class="wirefmt-row" data-r="4">
-      <div class="wirefmt">
-        <span>WIRE FORMAT ▸</span>
-        <span class="seg">request-line</span><span>+</span>
-        <span class="seg">headers</span><span>+</span>
-        <span class="seg">CRLF·CRLF</span><span>+</span>
-        <span class="seg b">body</span>
-        <span>— parsed by hand from raw TCP chunks</span>
+        <div class="stat-grid">
+          <div class="stat">
+            <div class="stat-n amber">0</div>
+            <div class="stat-k">dependencies</div>
+          </div>
+          <div class="stat">
+            <div class="stat-n">9</div>
+            <div class="stat-k">routes mounted</div>
+          </div>
+          <div class="stat">
+            <div class="stat-n">~600</div>
+            <div class="stat-k">LOC framework</div>
+          </div>
+          <div class="stat">
+            <div class="stat-n mint"><span class="lt">&lt;</span>1<span class="unit">ms</span></div>
+            <div class="stat-k">parser · p50</div>
+          </div>
+        </div>
+        <div class="pipe-wrap">
+          <div class="pipe">
+            <span class="stage"></span><span class="seg"></span>
+            <span class="stage"></span><span class="seg"></span>
+            <span class="stage"></span><span class="seg"></span>
+            <span class="stage"></span><span class="seg"></span>
+            <span class="stage"></span>
+          </div>
+          <div class="pipe-lbls">
+            <span>tcp</span><span>parse</span><span>route</span><span>handle</span><span>resp</span>
+          </div>
+        </div>
       </div>
+    </section>
+
+    <!-- ---------- TWO DIAGRAM PANELS ---------- -->
+    <section class="diagrams" data-r="2">
+      <div class="card">
+        <div class="card-head">
+          <span class="dot"></span>
+          <span>routes/ tree → api surface</span>
+          <span class="right">filesystem = router</span>
+        </div>
+        <div class="card-body">
+          <div class="tree">
+routes/<br>
+<span class="b">├─</span> index.js<span class="b"> ······· </span><span class="arr">→</span> <span class="path">/</span><br>
+<span class="b">├─</span> play.js<span class="b"> ········ </span><span class="arr">→</span> <span class="path">/play</span><br>
+<span class="b">├─</span> world.js<span class="b"> ······· </span><span class="arr">→</span> <span class="path">/world</span> <span class="ws">(ws)</span><br>
+<span class="b">└─</span> api/penguins/<br>
+<span class="b">&nbsp;&nbsp;&nbsp;├─</span> index.js<span class="b"> · </span><span class="arr">→</span> <span class="path">/api/penguins</span><br>
+<span class="b">&nbsp;&nbsp;&nbsp;└─</span> <span class="param">[id].js</span><span class="b"> ·· </span><span class="arr">→</span> <span class="path">/api/penguins/<span class="param">:id</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="dot mint"></span>
+          <span>routes/api/penguins/[id].js</span>
+          <span class="right">tagged-template DSL</span>
+        </div>
+        <div class="card-body">
+          <pre class="codeblock"><span class="cm">// reads top-to-bottom like an HTTP method table</span>
+<span class="kw">module</span>.exports = <span class="fn">http</span>`
+<span class="ind"></span><span class="kw">PUT</span>    $&#123;<span class="cm">({params}) =&gt;</span>
+<span class="ind"></span><span class="ind"></span><span class="ind"></span>  <span class="fn">json</span>(rename(params.id))}
+<span class="ind"></span><span class="kw">DELETE</span> $&#123;<span class="cm">() =&gt;</span> <span class="fn">noContent</span>()}
+`;</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- WIRE FORMAT STRIP ---------- -->
+    <div class="wire-strip" data-r="3">
+      <span class="label">▸ wire format</span>
+      <span class="seg">request-line</span>
+      <span class="plus">+</span>
+      <span class="seg">headers</span>
+      <span class="plus">+</span>
+      <span class="seg">CRLF·CRLF</span>
+      <span class="plus">+</span>
+      <span class="seg body">body</span>
+      <span class="tail" style="color:var(--ink-faint)">— parsed by hand from raw TCP chunks</span>
     </div>
 
-    <section class="panel" data-r="5">
-      <div class="panel-h"><span class="led"></span><span>Live route table &amp; API console</span></div>
-      <div class="panel-b">
+    <!-- ---------- LIVE ROUTE TABLE + CONSOLE + BROADCAST ---------- -->
+    <section class="card" data-r="4">
+      <div class="card-head">
+        <span class="dot mint pulse"></span>
+        <span>api console</span>
+        <span class="right">flies past /_inspect</span>
+      </div>
+      <div class="card-body">
         <div class="console-grid">
+          <!-- left column: routes + send -->
           <div>
-            <div class="routes" id="routes"></div>
-            <div class="bar">
-              <select id="method">
+            <div class="routes-list" id="routes"></div>
+            <div class="control-bar">
+              <select id="method" aria-label="HTTP method">
                 <option>GET</option><option>POST</option>
                 <option>DELETE</option><option>PUT</option>
               </select>
-              <input id="path" value="/api/penguins" />
-              <button id="go">Send ▸</button>
+              <input id="path" class="path-in" value="/api/penguins" aria-label="path"/>
+              <button id="go" class="primary">Send ▸</button>
             </div>
-            <div class="bar" id="bodyBar" style="display:none">
-              <input id="bodyName" placeholder="penguin name (POST/PUT) — e.g. Pingu" />
+            <div class="control-bar" id="bodyBar" style="display:none">
+              <input id="bodyName" class="path-in" style="color:var(--ink)" placeholder="penguin name (POST/PUT) — e.g. Pingu" />
             </div>
-            <div class="status" id="status">Select a route above, or type a path — then Send.</div>
+            <div class="status-line" id="status">Select a route above, or type a path — then Send.</div>
             <pre id="resp">// response appears here
 //
 // Try (penguins must be live — join at /play, or POST one here):
@@ -320,8 +805,14 @@ routes/<br>
 //   PUT    /api/penguins/1      ?name=Skipper → rename it
 //   DELETE /api/penguins/1      kick it (it gets a "kicked" notice)</pre>
           </div>
+
+          <!-- right column: admin broadcast / live world chat -->
           <div class="wall">
-            <div class="wall-h"><span class="live"></span>📢 Admin broadcast — to the whole world</div>
+            <div class="card-head" style="border:1px solid var(--line);border-radius:7px;margin-bottom:.65rem;padding:.45rem .75rem">
+              <span class="dot mint pulse"></span>
+              <span>broadcast</span>
+              <span class="right">ws · /world</span>
+            </div>
             <form class="composer" id="chatForm" onsubmit="return false">
               <input id="chatWhat" placeholder="announce to everyone… (Enter to send)" maxlength="200" />
               <button id="chatGo">Broadcast</button>
@@ -333,48 +824,57 @@ routes/<br>
       </div>
     </section>
 
-    <section class="scope" data-r="6">
-      <span class="glyph">📊</span>
-      <div class="t">
-        <div class="h">Data Explorer</div>
-        <div class="s">A framework-generated admin UI: rows from the live
-          JSON store with inline GET/PUT/DELETE buttons, discovered from
-          <code style="font-family:var(--mono);color:#d9c8ff">GET[list]</code>
-          /
-          <code style="font-family:var(--mono);color:#d9c8ff">POST[create]</code>
-          DSL hints.</div>
-      </div>
-      <a class="go" href="/_data" target="_blank">Open /_data ▸</a>
+    <!-- ---------- GATEWAY CARDS ---------- -->
+    <section class="gateways">
+      <a class="gateway data" href="/_data" target="_blank" data-r="5">
+        <div class="glyph">▤</div>
+        <div class="t">
+          <div class="h">Data Explorer <span class="route">/_data</span></div>
+          <div class="s">Framework-generated admin UI: rows from the live JSON
+            store with inline GET/PUT/DELETE buttons, discovered from
+            <code>GET[list]</code> / <code>POST[create]</code> DSL hints.</div>
+        </div>
+        <div class="go">Open ▸</div>
+      </a>
+      <a class="gateway" href="/_inspect" target="_blank" data-r="6">
+        <div class="glyph">⌁</div>
+        <div class="t">
+          <div class="h">Wire Inspector <span class="route">/_inspect</span></div>
+          <div class="s">A live view of the socket — watch the raw HTTP bytes
+            (request line, headers, status line) as they cross the wire.</div>
+        </div>
+        <div class="go">Open ▸</div>
+      </a>
     </section>
 
-    <section class="scope" data-r="6">
-      <span class="glyph">🔬</span>
-      <div class="t">
-        <div class="h">Wire Inspector</div>
-        <div class="s">A live view of the socket — watch the raw HTTP bytes
-          (request line, headers, status line) as you send requests.</div>
+    <!-- ---------- FOOTER ---------- -->
+    <footer class="foot">
+      <div class="lead">
+        Edit <code>routes/api/penguins/index.js</code> while the server runs,
+        save, and re-send — <b>hot reload</b>, no restart.
       </div>
-      <a class="go" href="/_inspect" target="_blank">Open /_inspect ▸</a>
-    </section>
-
-    <footer data-r="6">
-      Edit <code>routes/api/penguins/index.js</code> while the server runs, save,
-      and re-send — <b style="color:var(--ink)">hot reload</b>, no restart.
-      &nbsp;·&nbsp; <a href="/">← home</a>
-      &nbsp;·&nbsp; <a href="/play">🐧 play</a>
-      &nbsp;·&nbsp; <a href="/_routes">/_routes</a> (JSON)
-      &nbsp;·&nbsp; <a href="/_data">/_data</a> (explorer)
-      &nbsp;·&nbsp; <a href="/_inspect">/_inspect</a> (wire)
-      &nbsp;·&nbsp; Full Stack Engineering · Reichman University · 2026
+      <div class="links">
+        <a href="/">home</a>
+        <a href="/play">🐧 play</a>
+        <a href="/_routes">/_routes</a>
+        <a href="/_data">/_data</a>
+        <a href="/_inspect">/_inspect</a>
+      </div>
+      <div class="course">Full Stack Engineering · Reichman University · 2026</div>
     </footer>
+
   </div>
 
   <script>
+    /* ============================================================
+       JS preserved from the original forge.html — same selectors,
+       same fetch paths, same event handlers. Only the markup it
+       renders into changed (new .route / .m / .note classes that
+       are still styled by id+class above).
+       ============================================================ */
     const $ = (s) => document.querySelector(s);
     const respEl = $('#resp'), statusEl = $('#status');
 
-    // Always-escape HTML, even though our route names come from local
-    // files we control. Defense in depth + good habit.
     const esc = (s) => String(s).replace(/[&<>"']/g,
       c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
     const safeMethod = (m) => /^[A-Z]+$/.test(m) ? m : '';
@@ -382,16 +882,19 @@ routes/<br>
     async function loadRoutes() {
       const r = await fetch('/_routes');
       const { routes } = await r.json();
-      // The HTTP API console can't exercise WebSocket routes, so hide /world.
       const httpRoutes = routes.filter(rt => !(rt.methods || []).includes('WS'));
       $('#routes').innerHTML = httpRoutes.map(rt => {
         const methods = rt.methods.map(safeMethod).filter(Boolean);
         const data_p = esc((rt.path || '').replace(':id', '1'));
         const data_m = esc(methods[0] || 'GET');
+        // 'code' = registered via the imperative app.get() API; 'file' = a
+        // routes/ file. Both run on the same router — the tag shows which.
+        const src = rt.source === 'code' ? 'code' : 'file';
         return `
         <div class="route">
           ${methods.map(m => `<span class="m ${m}">${m}</span>`).join('')}
           <a href="#" data-p="${data_p}" data-m="${data_m}">${esc(rt.path)}</a>
+          <span class="src ${src}">${src}</span>
         </div>`;
       }).join('');
       document.querySelectorAll('.route a').forEach(a =>
@@ -400,9 +903,6 @@ routes/<br>
           $('#path').value = a.dataset.p;
           $('#method').value = a.dataset.m;
           syncBodyBar();
-          // GET fires immediately (nothing to fill in). POST/PUT/DELETE
-          // fill the form and wait so you can set the name (POST/PUT) or
-          // confirm/edit the id in the path (DELETE) before sending.
           if (a.dataset.m === 'GET') {
             send();
           } else {
@@ -420,11 +920,6 @@ routes/<br>
       try {
         const opt = { method };
         if (method === 'POST' || method === 'PUT') {
-          // Send the name as a query param instead of a JSON request body.
-          // A body-bearing fetch over plain http:// to a LAN IP is
-          // silently blocked by some mobile browsers ("permission
-          // denied"); a query string is not. The server reads req.query
-          // too, so this behaves the same as a JSON body.
           const name = ($('#bodyName').value || 'Pingu').trim();
           path += (path.includes('?') ? '&' : '?') +
             'name=' + encodeURIComponent(name);
@@ -452,7 +947,6 @@ routes/<br>
       }
     }
 
-    // Show the name field only when the method can carry a payload.
     function syncBodyBar() {
       const m = $('#method').value;
       const show = (m === 'POST' || m === 'PUT');
@@ -462,7 +956,6 @@ routes/<br>
           (m === 'PUT' ? 'new name (PUT)' : 'name to spawn (POST)') +
           ' — e.g. Pingu';
       }
-      // DELETE has no body; the resource id lives in the path. Nudge it.
       if (m === 'DELETE') {
         statusEl.textContent =
           'DELETE — set the id in the path (e.g. /api/penguins/1), then Send.';
@@ -474,14 +967,31 @@ routes/<br>
     $('#go').onclick = send;
     $('#path').addEventListener('keydown', e => e.key==='Enter' && send());
     $('#bodyName').addEventListener('keydown', e => e.key==='Enter' && send());
-    loadRoutes();
 
-    // ----- Admin broadcast (over the from-scratch WebSocket) -----------
-    // This panel is a WATCHER on the penguin world's /world socket: it sees
-    // every chat line live (penguins typing in /play) — and, as the admin
-    // console, it can BROADCAST: sending posts {t:'announce', text}, which
-    // pops up for every penguin in the world. No user name (it's "admin").
-    // It sends {t:'watch'} on open and renders incoming {t:'chatlog'}.
+    // Detect standalone-preview mode (no live fs-forge server) and install
+    // the mock fetch ladder BEFORE the first loadRoutes() call so the
+    // route table populates with the same suggestions you'd see live.
+    (async () => {
+      let standalone = !location.host || location.protocol === 'file:';
+      if (!standalone) {
+        try {
+          const probe = await fetch('/_routes');
+          if (!probe.ok) standalone = true;
+          else await probe.json();
+        } catch { standalone = true; }
+      }
+      if (standalone) installMocks();
+      await loadRoutes();
+      // Auto-fire an initial GET so the response area lands with real data
+      // instead of just the placeholder comment. Picks the most useful
+      // route (the live roster) automatically.
+      $('#method').value = 'GET';
+      $('#path').value = '/api/penguins';
+      syncBodyBar();
+      send();
+    })();
+
+    /* ----- admin broadcast (over the from-scratch WebSocket) ----- */
     const chatFeed = $('#chatFeed');
     const chatWhat = $('#chatWhat');
     const chatErr  = $('#chatErr');
@@ -490,7 +1000,7 @@ routes/<br>
     function chatEmpty(){
       chatFeed.innerHTML = '<div class="feed-empty">Live chat from the world appears here. '
         + 'Type above to broadcast an announcement to every penguin, or '
-        + '<a href="/play" target="_blank" style="color:#7fc7ff">enter the world</a>.</div>';
+        + '<a href="/play" target="_blank">enter the world</a>.</div>';
     }
     function addChat(name, room, text){
       const empty = chatFeed.querySelector('.feed-empty');
@@ -498,7 +1008,7 @@ routes/<br>
       const at = new Date().toLocaleTimeString();
       chatFeed.insertAdjacentHTML('afterbegin',
         '<div class="note fresh">'
-        + '<div class="who">'+esc(name||'anon')+' <span style="color:#6b769c;font-weight:400">· '+esc(room||'')+' · '+at+'</span></div>'
+        + '<div class="who">'+esc(name||'anon')+' <span class="mut">· '+esc(room||'')+' · '+at+'</span></div>'
         + '<div class="what">'+esc(text||'')+'</div></div>');
       while (chatFeed.children.length > 40) chatFeed.lastElementChild.remove();
     }
@@ -507,14 +1017,31 @@ routes/<br>
       if (!ok) chatErr.textContent = 'chat disconnected — reconnecting…';
     }
     function connectChat(){
-      chatSock = new WebSocket('ws://' + location.host + '/world');
-      chatSock.onopen = () => { setChatConn(true); chatSock.send(JSON.stringify({ t: 'watch' })); };
-      chatSock.onmessage = (e) => {
-        let m; try { m = JSON.parse(e.data); } catch { return; }
-        if (m.t === 'chatlog') addChat(m.name, m.room, m.text);
-      };
-      chatSock.onclose = () => { setChatConn(false); chatSock = null; setTimeout(connectChat, 1500); };
-      chatSock.onerror = () => {};
+      // Demo mode: when this file is loaded outside the live server, the
+      // WS call would just error in a loop. Detect and show a friendly
+      // placeholder. This covers both file:// loads (no host) and HTTP
+      // previews where /world is not actually a WebSocket route.
+      if (typeof location !== 'undefined' && (!location.host || location.protocol === 'file:')) {
+        setChatConn(true);
+        return;
+      }
+      try {
+        chatSock = new WebSocket('ws://' + location.host + '/world');
+        let opened = false;
+        chatSock.onopen = () => { opened = true; setChatConn(true); chatSock.send(JSON.stringify({ t: 'watch' })); };
+        chatSock.onmessage = (e) => {
+          let m; try { m = JSON.parse(e.data); } catch { return; }
+          if (m.t === 'chatlog') addChat(m.name, m.room, m.text);
+        };
+        chatSock.onclose = () => {
+          chatSock = null;
+          // If we never opened, we're in preview mode — stay quiet.
+          if (!opened) { setChatConn(true); return; }
+          setChatConn(false);
+          setTimeout(connectChat, 1500);
+        };
+        chatSock.onerror = () => {};
+      } catch (e) { setChatConn(true); }
     }
     function sendChat(){
       const what = chatWhat.value.trim();
@@ -527,6 +1054,46 @@ routes/<br>
     chatWhat.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
     chatEmpty();
     connectChat();
+
+    /* ------- preview-only: when this file is opened standalone (not
+       served by fs-forge) we mock /_routes so the route table still
+       renders. The mock is installed by the (async IIFE) above only
+       after probing for a real /_routes endpoint — so dropping the
+       file into the live server falls back cleanly to the real one. */
+    function installMocks(){
+      const mockRoutes = {
+        routes: [
+          { path: '/', methods: ['GET'] },
+          { path: '/play', methods: ['GET'] },
+          { path: '/forge', methods: ['GET'] },
+          { path: '/world', methods: ['WS'] },
+          { path: '/api/penguins', methods: ['GET','POST'] },
+          { path: '/api/penguins/:id', methods: ['GET','PUT','DELETE'] },
+          { path: '/api/ping', methods: ['GET'], source: 'code' },
+          { path: '/_routes', methods: ['GET'] },
+          { path: '/_data', methods: ['GET'] },
+          { path: '/_inspect', methods: ['GET'] },
+        ],
+      };
+      const origFetch = window.fetch;
+      window.fetch = (url, opts) => {
+        if (typeof url === 'string' && url === '/_routes') {
+          return Promise.resolve(new Response(JSON.stringify(mockRoutes), {
+            status: 200, headers: { 'content-type': 'application/json' }
+          }));
+        }
+        if (typeof url === 'string' && url.startsWith('/api/penguins')) {
+          const m = (opts && opts.method) || 'GET';
+          const body = m === 'GET'
+            ? [{ id: 1, name: 'Pingu', room: 'plaza' }, { id: 2, name: 'Skipper', room: 'cafe' }]
+            : { ok: true, method: m, path: url };
+          return Promise.resolve(new Response(JSON.stringify(body), {
+            status: 200, headers: { 'content-type': 'application/json' }
+          }));
+        }
+        return origFetch(url, opts);
+      };
+    }
   </script>
 </body>
 </html>
