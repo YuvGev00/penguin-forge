@@ -104,7 +104,8 @@ function connect() {
     Game.wireLeave(() => ws.send(JSON.stringify({ t: 'leave' })));
   };
   ws.onmessage = (e) => {
-    const m = JSON.parse(e.data);
+    let m;
+    try { m = JSON.parse(e.data); } catch { return; } // ignore a malformed frame
     if (m.t === 'hello') myId = m.id;
     else if (m.t === 'snap') { prev = cur; prevAt = curAt; cur = m; curAt = performance.now(); }
     else if (m.t === 'cab') Game.handle(m.cab, m.ev);
@@ -1077,6 +1078,17 @@ function render() {
 
     if (pl.m) bubble(x, y - 50, pl.m, now);
   }
+
+  // Evict per-penguin animation state for anyone no longer in this room's
+  // snapshot — otherwise `anim` grows by one entry per penguin ever seen.
+  if (cur.players) {
+    const liveIds = new Set(cur.players.map((p) => p.id));
+    for (const id of anim.keys()) if (!liveIds.has(id)) anim.delete(id);
+  }
+  // Drop stale speech-bubble pop-in timers by age every frame (the key embeds
+  // the float x position, so a moving/departed penguin's keys would otherwise
+  // never be revisited and never cleaned up).
+  for (const [k, born] of bubbleBorn) if (now - born > 8000) bubbleBorn.delete(k);
 
   $('roomName').textContent = cur.roomName || '';
 

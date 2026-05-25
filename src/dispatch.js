@@ -32,11 +32,17 @@ function applyDescriptor(res, value) {
     case 'redirect':
       return res.redirect(value.location, value.status);
     case 'file':
-      return res
+      // sendFile() stats the file asynchronously: it sets res.sent
+      // synchronously but only flips keepAlive=false (and writes bytes) inside
+      // the fs.stat callback. Return res.done so the caller (dispatch) awaits
+      // the flush — otherwise the drain loop sees sent && keepAlive and could
+      // serve the next pipelined request before this file's bytes go out.
+      res
         .status(value.status)
         .sendFile(value.path, () =>
           res.status(404).json({ error: 'Not Found' })
         );
+      return res.done;
     case 'send':
     default:
       return res.status(value.status).send(value.body);

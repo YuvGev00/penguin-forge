@@ -109,7 +109,7 @@ class DrawGame {
     if (!p) return;
     const g = String(text || '').trim();
     if (!g) return;
-    if (this.active && id !== this.drawerId() && !this.guessed.has(id) &&
+    if (this.active && this.word && id !== this.drawerId() && !this.guessed.has(id) &&
         g.toLowerCase() === this.word.toLowerCase()) {
       this.guessed.add(id);
       const pts = 100 + Math.max(0, Math.round((this.endsAt - Date.now()) / 600));
@@ -121,7 +121,8 @@ class DrawGame {
       if (this.guessed.size >= this.players.size - 1) {
         this.active = false;
         this.emit({ t: 'sys', text: `Word was "${this.word}"` });
-        setTimeout(() => this.start(), 3000);
+        clearTimeout(this._roundTimer);
+        this._roundTimer = setTimeout(() => this.start(), 3000);
       }
       return;
     }
@@ -131,8 +132,14 @@ class DrawGame {
     if (this.active && Date.now() >= this.endsAt) {
       this.active = false;
       this.emit({ t: 'sys', text: `Time! Word was "${this.word}"` });
-      setTimeout(() => this.start(), 3000);
+      clearTimeout(this._roundTimer);
+      this._roundTimer = setTimeout(() => this.start(), 3000);
     }
+  }
+  // Clear any pending round timer so an emptied cabinet leaves nothing behind.
+  destroy() {
+    clearTimeout(this._roundTimer);
+    this._roundTimer = null;
   }
   snapshotFor(id) {
     return { t: 'state', ...this.state(id), replay: this.ops };
@@ -157,7 +164,14 @@ class DuelGame {
   }
   remove(id) {
     this.players.delete(id);
-    if (this.players.size < 2) { this.phase = 'idle'; }
+    if (this.players.size < 2) {
+      this.phase = 'idle';
+      // Drop below two players mid-round: cancel any pending GO / next-round
+      // timer so it can't fire into an empty (or stale) cabinet later.
+      clearTimeout(this._goTimer);
+      clearTimeout(this._nextTimer);
+      this._goTimer = this._nextTimer = null;
+    }
     this.emit({ t: 'duel', ...this.state() });
   }
   state() {
@@ -205,16 +219,25 @@ class DuelGame {
     }
   }
   _next() {
-    setTimeout(() => {
+    clearTimeout(this._nextTimer);
+    this._nextTimer = setTimeout(() => {
       if (this.players.size >= 2) this.arm();
       else { this.phase = 'idle'; this.emit({ t: 'duel', ...this.state() }); }
     }, 2500);
   }
   tick() {}
+  // Cancel both timers so an emptied cabinet leaves nothing scheduled.
+  destroy() {
+    clearTimeout(this._goTimer);
+    clearTimeout(this._nextTimer);
+    this._goTimer = this._nextTimer = null;
+  }
   snapshotFor() { return { t: 'duel', ...this.state() }; }
 }
 
 // ---------------- Book Room (shared reading + marginalia) ----------------
+// Upper bound on distinct book#page note keys held in memory at once.
+const BOOK_MAX_KEYS = 500;
 class BookRoom {
   constructor(emit) {
     this.emit = emit;
@@ -237,7 +260,14 @@ class BookRoom {
     const text = String(m.text || '').replace(/[\r\n]/g, ' ').slice(0, 140).trim();
     if (!text) return;
     const key = `${book}#${page}`;
-    if (!this.notes[key]) this.notes[key] = [];
+    if (!this.notes[key]) {
+      // Cap the number of distinct note keys so a client can't grow the map
+      // without bound by posting to endless fabricated book#page combos.
+      // Evict the oldest key (insertion order) once we'd exceed the limit.
+      const keys = Object.keys(this.notes);
+      if (keys.length >= BOOK_MAX_KEYS) delete this.notes[keys[0]];
+      this.notes[key] = [];
+    }
     if (this.notes[key].length >= 30) this.notes[key].shift();
     this.notes[key].push({ name, text });
     this.emit({ t: 'notes', key, notes: this.notes[key].slice() });
@@ -250,6 +280,7 @@ class BookRoom {
     this.emit({ t: 'notes', key, notes: (this.notes[key] || []).slice(), _to: id });
   }
   tick() {}
+  destroy() {} // no timers to clear
   snapshotFor(id) {
     return { t: 'bookstate', members: [...this.members.values()], _to: id };
   }
@@ -292,6 +323,14 @@ class Arcade {
     if (!c) return;
     c.members.delete(id);
     c.game.remove(id);
+    // When the last penguin leaves a cabinet, tear the game down: clear its
+    // pending timers and drop the entry so `cabs` doesn't accumulate dead
+    // games (and tick() doesn't keep stepping them). BookRoom is exempt — its
+    // margin notes are shared marginalia meant to persist between visitors.
+    if (c.members.size === 0 && !(c.game instanceof BookRoom)) {
+      c.game.destroy();
+      this.cabs.delete(cabId);
+    }
   }
   input(cabId, id, m) {
     const c = this.cabs.get(cabId);
@@ -302,8 +341,6 @@ class Arcade {
     else if (m.kind === 'press') g.press && g.press(id);
     else if (m.kind === 'note') g.note && g.note(id, m);
     else if (m.kind === 'peek') g.peek && g.peek(id, m);
-    else if (m.kind === 'submit') g.submit && g.submit(id, m);
-    else if (m.kind === 'next') g.next && g.next(id);
   }
   tick() { for (const c of this.cabs.values()) c.game.tick(); }
 }

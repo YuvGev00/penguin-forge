@@ -15,7 +15,13 @@ const MAX_REQUEST_BYTES = 1024 * 1024; // 1 MiB
 
 function createNetServer(dispatch, { inspector } = {}) {
   let nextConnId = 0;
-  return net.createServer((socket) => {
+  // Track every open socket so a clean shutdown can tear down long-lived
+  // connections (SSE / WebSocket) that have disabled their own timeouts and
+  // would otherwise keep the process alive after server.close().
+  const openSockets = new Set();
+  const server = net.createServer((socket) => {
+    openSockets.add(socket);
+    socket.once('close', () => openSockets.delete(socket));
     let buffer = Buffer.alloc(0);
     let closed = false;
     let dispatching = false;
@@ -217,6 +223,14 @@ function createNetServer(dispatch, { inspector } = {}) {
       drain();
     });
   });
+
+  // Destroy every still-open connection. Called by forge().close() so a
+  // shutdown isn't held open by long-lived SSE / WebSocket sockets.
+  server.destroyOpenSockets = () => {
+    for (const s of openSockets) s.destroy();
+    openSockets.clear();
+  };
+  return server;
 }
 
 module.exports = { createNetServer, MAX_REQUEST_BYTES };

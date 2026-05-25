@@ -56,8 +56,20 @@ function isUpgrade(headers) {
   if (upgrade !== 'websocket') return null;
   if (!connection.split(',').map((s) => s.trim()).includes('upgrade')) return null;
   if (!key) return null;
+  // RFC 6455 §4.2.1: Sec-WebSocket-Key MUST be a base64-encoded 16-byte value.
+  // Reject anything else rather than hashing arbitrary text into a 101.
+  if (!isValidKey(key)) return null;
   if (version !== '13') return { error: '426', key: null }; // Upgrade Required
   return { error: null, key };
+}
+
+function isValidKey(key) {
+  if (!/^[A-Za-z0-9+/]{22}==$/.test(String(key).trim())) return false;
+  try {
+    return Buffer.from(key, 'base64').length === 16;
+  } catch {
+    return false;
+  }
 }
 
 // Build the raw 101 response bytes. Written directly to the socket (NOT via

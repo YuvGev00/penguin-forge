@@ -90,6 +90,10 @@ const Game = (() => {
     active = cabId;
     const ov = $('cabOverlay');
     if (!cabId) {
+      // Leaving a cabinet: kill the duel's live-ms interval if it was running,
+      // otherwise it keeps firing every 16ms into a now-hidden element (and a
+      // re-entry would stack a second interval).
+      stopDuelTick();
       ov.classList.remove('on');
       lobbyShown = false;
       $('cabLobby').hidden = true;
@@ -471,8 +475,10 @@ const Game = (() => {
   $('duelBtn').onclick = () => send({ kind: 'press' });
 
   function esc(s) {
-    return String(s).replace(/[&<>]/g,
-      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    // Escape quotes too (not just &<>) so an escaped value stays safe even if
+    // it's ever interpolated into an HTML attribute, not only element text.
+    return String(s).replace(/[&<>"']/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
   // Render one event into the overlay (only meaningful when that cabinet
