@@ -32,6 +32,10 @@ function fileToPattern(relFile) {
   // same-length param segment (e.g. /api/users/new before /api/users/:id),
   // independent of filesystem walk order.
   const kinds = [];
+  // Canonical segments: param/catch-all collapsed to a fixed token so the
+  // ordering tiebreak can't be swayed by how long a param NAME happens to be
+  // (`:id` vs `:accountIdentifier` are the same shape and must tie).
+  const canonSegments = [];
   for (const seg of segments) {
     const catchAll = seg.match(/^\[\.\.\.(.+)\]$/);
     const param = seg.match(/^\[(.+)\]$/);
@@ -39,22 +43,30 @@ function fileToPattern(relFile) {
       paramNames.push(catchAll[1]);
       regexParts.push('(.+)'); // greedy: consumes the rest of the path
       displaySegments.push('*' + catchAll[1]);
+      canonSegments.push('*');
       kinds.push(0);
     } else if (param) {
       paramNames.push(param[1]);
       regexParts.push('([^/]+)');
       displaySegments.push(':' + param[1]);
+      canonSegments.push(':');
       kinds.push(1);
     } else {
       regexParts.push(escapeRegex(seg));
       displaySegments.push(seg);
+      canonSegments.push(seg);
       kinds.push(2);
     }
   }
 
   const pathname = '/' + displaySegments.join('/');
+  const canon = '/' + canonSegments.join('/');
   const regex = new RegExp('^/' + regexParts.join('/') + '/?$');
-  return { pathname: pathname === '/' ? '/' : pathname, regex, paramNames, kinds };
+  return {
+    pathname: pathname === '/' ? '/' : pathname,
+    canon: canon === '/' ? '/' : canon,
+    regex, paramNames, kinds,
+  };
 }
 
 function escapeRegex(s) {
@@ -113,6 +125,11 @@ function bySpecificity(a, b) {
   for (let i = 0; i < a.kinds.length; i++) {
     if (a.kinds[i] !== b.kinds[i]) return b.kinds[i] - a.kinds[i];
   }
+  // Tiebreak on the CANONICAL path length (params collapsed to ':'), so a long
+  // param NAME can't make a route outrank a same-shape one. Falls back to
+  // display length for two genuinely different literal paths of equal shape.
+  const ac = a.canon || a.pathname, bc = b.canon || b.pathname;
+  if (bc.length !== ac.length) return bc.length - ac.length;
   return b.pathname.length - a.pathname.length;
 }
 
@@ -133,9 +150,9 @@ function createFsRouter(routesDir) {
     const next = [];
     for (const rel of walk(root)) {
       const abs = path.join(root, rel);
-      const { pathname, regex, paramNames, kinds } = fileToPattern(rel);
+      const { pathname, canon, regex, paramNames, kinds } = fileToPattern(rel);
       try {
-        next.push({ pathname, regex, paramNames, kinds, file: abs, source: 'file', handlers: loadRouteModule(abs) });
+        next.push({ pathname, canon, regex, paramNames, kinds, file: abs, source: 'file', handlers: loadRouteModule(abs) });
       } catch (err) {
         // A mid-save syntax error (or empty file from an editor's atomic
         // write) shouldn't make a working route vanish — keep the last
@@ -166,13 +183,13 @@ function createFsRouter(routesDir) {
     if (typeof handler !== 'function') {
       throw new Error(`addRoute: ${M} ${urlPattern} handler must be a function`);
     }
-    const { pathname, regex, paramNames, kinds } = patternToRegex(urlPattern);
+    const { pathname, canon, regex, paramNames, kinds } = patternToRegex(urlPattern);
     let entry = programmatic.find((r) => r.pathname === pathname);
     if (!entry) {
       const handlers = {};
       Object.defineProperty(handlers, '__forgeRoute', { value: true });
       Object.defineProperty(handlers, '__hints', { value: {} });
-      entry = { pathname, regex, paramNames, kinds, file: null, source: 'code', handlers };
+      entry = { pathname, canon, regex, paramNames, kinds, file: null, source: 'code', handlers };
       programmatic.push(entry);
     }
     entry.handlers[M] = handler;
@@ -194,23 +211,74 @@ function createFsRouter(routesDir) {
           params[name] = m[i + 1];
         }
       });
-      return { handlers: route.handlers, params, file: route.file };
+
+      // A path can be declared by BOTH a routes/ file and the imperative
+      // app.get/app.post facade. Compose them: merge the method handlers of
+      // every entry sharing this display path so a verb defined by either
+      // mechanism is reachable (otherwise the entry that sorts first would
+      // silently shadow the other's verbs as a 405). A WS route never merges
+      // with HTTP — it has a single `handler`, not method keys.
+      if (route.handlers.__forgeWs) {
+        return { handlers: route.handlers, params, file: route.file };
+      }
+      const peers = combined.filter(
+        (r) => r.pathname === route.pathname && !r.handlers.__forgeWs
+      );
+      if (peers.length === 1) {
+        return { handlers: route.handlers, params, file: route.file };
+      }
+      // Build a merged handler map. Apply CODE entries first, then FILE
+      // entries, so on a same-verb collision the hand-written file wins.
+      const merged = {};
+      const hints = {};
+      const ordered = [
+        ...peers.filter((r) => r.source !== 'file'),
+        ...peers.filter((r) => r.source === 'file'),
+      ];
+      for (const r of ordered) {
+        for (const method of Object.keys(r.handlers)) merged[method] = r.handlers[method];
+        Object.assign(hints, r.handlers.__hints || {});
+      }
+      Object.defineProperty(merged, '__forgeRoute', { value: true });
+      Object.defineProperty(merged, '__hints', { value: hints });
+      // file id of the primary (first-sorted) entry, for the route builder.
+      return { handlers: merged, params, file: route.file };
     }
     return null;
   }
 
   function list() {
-    return combined.map((r) => ({
-      path: r.pathname,
-      // A WS route has a single `handler`, not method keys — label it 'WS'
-      // so the route table / boot log reads honestly.
-      methods: r.handlers.__forgeWs ? ['WS'] : Object.keys(r.handlers),
-      hints: r.handlers.__hints || {},
-      // 'file' (declared by a routes/ file) vs 'code' (registered via the
-      // imperative app.get/app.post facade) — surfaced in /_routes so the UI
-      // can show which mechanism declared each route.
-      source: r.source || 'file',
-    }));
+    // Collapse entries that share a display path (a path composed from a file
+    // route + an app.get() route) into a single row with the union of methods
+    // and hints — so /_routes / the dashboards show one honest entry, matching
+    // what match() actually serves. A WS route stays its own row ('WS').
+    const byPath = new Map();
+    for (const r of combined) {
+      const isWs = !!r.handlers.__forgeWs;
+      const key = isWs ? r.pathname + '\0ws' : r.pathname;
+      let row = byPath.get(key);
+      if (!row) {
+        row = {
+          path: r.pathname,
+          methods: isWs ? ['WS'] : [],
+          hints: {},
+          // 'file' (declared by a routes/ file) vs 'code' (registered via the
+          // imperative app.get/app.post facade). If a path is composed from
+          // both, label it 'mixed' so the UI is honest about it.
+          source: r.source || 'file',
+        };
+        byPath.set(key, row);
+      } else if (!isWs && row.source !== (r.source || 'file')) {
+        row.source = 'mixed';
+      }
+      if (!isWs) {
+        for (const method of Object.keys(r.handlers)) {
+          if (!row.methods.includes(method)) row.methods.push(method);
+        }
+        Object.assign(row.hints, r.handlers.__hints || {});
+      }
+    }
+    return [...byPath.values()];
   }
 
   rebuild();

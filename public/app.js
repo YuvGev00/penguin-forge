@@ -99,17 +99,43 @@ function start() {
   // Cloud curtain: the login screen is covered by closed clouds. On login we
   // connect to the game (it renders at the base layer, hidden behind the
   // clouds), then PART the clouds left/right like curtains and fade the intro
-  // out — revealing the live world between them. After the 1.6s part, the
-  // intro + cloud overlay are removed entirely.
-  const PART_MS = 1600; // matches the .bank transition duration
+  // out — revealing the live world between them. After the part, the intro +
+  // cloud overlay are removed entirely.
+  //
+  // prefers-reduced-motion shortens the .bank transition to .5s (see the CSS),
+  // so match the teardown delay to whichever the user gets — otherwise the
+  // curtain sits fully-open-but-still-present for ~1.1s for those users.
+  const reduce = window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const PART_MS = reduce ? 500 : 1600; // matches the .bank transition duration
   connect();                       // game starts rendering behind the clouds
   $('intro').classList.add('opening'); // fade the form/plaza out
   wipe.classList.add('part');      // slide the two banks apart
 
-  setTimeout(() => {
+  curtainTimer = setTimeout(() => {
     $('intro').style.display = 'none';
     wipe.classList.add('gone');
+    wipe.classList.remove('play'); // animation no longer needed once hidden
   }, PART_MS);
+}
+
+// Handle for the start() teardown timer, so a name rejection arriving mid-part
+// can cancel it before it hides the intro we're sending the user back to.
+let curtainTimer = null;
+
+// Put the cloud curtain back to its CLOSED login state — clouds covering and
+// billowing, the form visible. Reverses everything start() did so returning to
+// the intro (e.g. after a rejected name) never leaves a blank/half-open screen.
+function resetCurtain() {
+  clearTimeout(curtainTimer);
+  const intro = $('intro');
+  const wipe = $('cloudWipe');
+  if (intro) intro.classList.remove('opening'); // un-fade the form
+  if (wipe) {
+    wipe.classList.remove('part', 'gone'); // close the curtain again
+    wipe.classList.add('play');            // resume the gentle billow
+  }
+  if (intro) intro.style.display = 'flex';
 }
 
 function connect() {
@@ -147,8 +173,10 @@ let nameRejected = false;
 function showNameTaken(name) {
   nameRejected = true;
   try { if (ws) ws.close(); } catch (e) {}
-  const intro = $('intro');
-  if (intro) intro.style.display = 'flex';
+  // Re-close the cloud curtain + un-fade the form (start() had begun opening
+  // it), and cancel its pending teardown timer — otherwise the user is sent
+  // back to a blank, invisible intro.
+  resetCurtain();
   const err = $('nameErr');
   if (err) err.textContent = '"' + (name || myName) + '" is already in the world — pick another.';
   const inp = $('name');

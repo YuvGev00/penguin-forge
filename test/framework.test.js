@@ -619,6 +619,69 @@ async function cleanup() {
       check('ws receives live store change on POST', /"type":"store".*"collection":"users".*"kind":"insert"/.test(t));
     }
 
+    // ===== imperative app.get/app.post facade (the dual routing API) =====
+    // Routes registered via the chainable verbs run on the SAME router as the
+    // routes/ files, take effect live (addRoute -> recombine), and are tagged
+    // source:"code" in /_routes.
+    {
+      const { json } = forge; // DSL helpers are re-exported off forge
+      app.get('/api/ping', () => json({ pong: true }));
+      app.post('/api/echo', ({ body }) => json({ echoed: body }, 201));
+      app.get('/api/code/:id', ({ params }) => json({ id: params.id }));
+
+      let res = await GET('/api/ping');
+      check('app.get(): GET /api/ping -> 200', res.status === 200);
+      check('app.get(): body returned', JSON.parse(res.body).pong === true);
+
+      const eb = JSON.stringify({ hi: 'there' });
+      res = await request(
+        `POST /api/echo HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(eb)}\r\n\r\n${eb}`
+      );
+      check('app.post(): POST /api/echo -> 201', res.status === 201);
+      check('app.post(): body round-tripped', JSON.parse(res.body).echoed.hi === 'there');
+
+      res = await GET('/api/code/xyz');
+      check('app.get(): code-route :param extracted', res.status === 200 && JSON.parse(res.body).id === 'xyz');
+
+      // /_routes tags the mechanism: code routes -> source:"code", files -> "file".
+      res = await GET('/_routes');
+      const routes = JSON.parse(res.body).routes;
+      const ping = routes.find((r) => r.path === '/api/ping');
+      check('/_routes: /api/ping present with source:"code"', !!ping && ping.source === 'code');
+      const helloRoute = routes.find((r) => r.path === '/api/hello');
+      check('/_routes: a file route reports source:"file"', !!helloRoute && helloRoute.source === 'file');
+
+      // Programmatic routes survive a rebuild (hot reload only rewalks routes/).
+      app.router.rebuild();
+      res = await GET('/api/ping');
+      check('app.get() route survives router.rebuild()', res.status === 200);
+
+      // Same-path composition: a code verb added to a path that ALSO has a
+      // file route is reachable (not shadowed). /api/users is a file route
+      // (GET[list]/POST[create]); add a code PATCH and confirm all reachable.
+      app.patch('/api/users', () => json({ patched: true }));
+      res = await GET('/api/users');
+      check('compose: file GET still works after code PATCH added', res.status === 200);
+      res = await request('PATCH /api/users HTTP/1.1\r\nHost: x\r\n\r\n');
+      check('compose: code PATCH on a file path is reachable (not 405)', res.status === 200 && JSON.parse(res.body).patched === true);
+
+      // File-WINS on a same-verb collision: the file GET[list] returns the
+      // users ARRAY; a code GET added to the same path must NOT override it.
+      app.get('/api/users', () => json({ iAmCode: true }));
+      res = await GET('/api/users');
+      check('compose: file handler wins on same-verb (GET) collision',
+        res.status === 200 && Array.isArray(JSON.parse(res.body)));
+
+      // /_routes collapses the composed path into ONE row whose methods are
+      // the union (file GET/POST + code PATCH) and whose source is 'mixed'.
+      res = await GET('/_routes');
+      const usersRow = JSON.parse(res.body).routes.find((r) => r.path === '/api/users');
+      check('compose: /_routes shows one merged row with unioned methods',
+        !!usersRow &&
+        ['GET', 'POST', 'PATCH'].every((mth) => usersRow.methods.includes(mth)) &&
+        usersRow.source === 'mixed');
+    }
+
     console.log(`\n${passed} assertions passed`);
     await cleanup();
     app.close();

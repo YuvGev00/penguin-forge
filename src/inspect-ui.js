@@ -682,18 +682,21 @@ module.exports = `<!DOCTYPE html>
     const arrow=dir==='in'?'▼ INBOUND':'▲ OUTBOUND';
     const code=statusOf(e);
     const tone=code===null?'':(code>=400?' err':' ok');
+    // Defense-in-depth: these fields come from the server's own inspector,
+    // but coerce numerics and escape the timestamp before innerHTML so a
+    // malformed event can never inject markup into the feed.
     const codeTag=code!==null
-      ? ' <span class="code">'+code+'</span>' : '';
+      ? ' <span class="code">'+escapeHtml(String(code))+'</span>' : '';
     const fw=e.scope==='framework'
       ? ' <span class="scope-fw">· framework</span>' : '';
     const replay=isReplayable(e)
-      ? '<button class="replay" data-seq="'+e.seq+'" title="Re-fire these exact bytes via a fresh TCP connection back to the server">↻ REPLAY</button>'
+      ? '<button class="replay" data-seq="'+(Number(e.seq)||0)+'" title="Re-fire these exact bytes via a fresh TCP connection back to the server">↻ REPLAY</button>'
       : '';
     const el=document.createElement('div');
     el.className='ev '+dir+tone;
     el.innerHTML='<div class="h"><span class="tag">'+arrow+'</span>'+codeTag+
-      '<span class="meta"><b>conn #'+e.connId+'</b> · '+e.bytes+' B'+
-      (e.truncated?' (trunc)':'')+fw+' · '+t(e.ts)+'</span>'+replay+
+      '<span class="meta"><b>conn #'+(Number(e.connId)||0)+'</b> · '+(Number(e.bytes)||0)+' B'+
+      (e.truncated?' (trunc)':'')+fw+' · '+escapeHtml(t(e.ts))+'</span>'+replay+
       '</div><pre></pre>';
     el.querySelector('pre').textContent=hex.checked?e.hex:e.text;
     const btn=el.querySelector('.replay');
