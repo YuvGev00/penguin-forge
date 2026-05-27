@@ -109,20 +109,43 @@ const DioramaHero = React.memo(function DioramaHero({ palette: p }) {
 // card so the type stays readable against the diorama (the centered layout
 // was clashing with the moon + university silhouette).
 const HeroText = React.forwardRef(function HeroText({ onScrollToForge }, ref) {
+  // LIVE plaza count — polls the real REST roster (GET /api/penguins) and
+  // counts penguins whose room is 'plaza'. `null` until the first fetch
+  // resolves (or if the endpoint is unreachable), so the label can fall back
+  // to a non-numeric "live" state instead of flashing a fake or "0".
+  const [plaza, setPlaza] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const rows = await (await fetch('/api/penguins', { cache: 'no-store' })).json();
+        if (alive) setPlaza(Array.isArray(rows)
+          ? rows.filter((r) => r && r.room === 'plaza').length
+          : null);
+      } catch { if (alive) setPlaza(null); }
+    };
+    tick();
+    const id = setInterval(tick, 4000); // refresh as penguins join/leave
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
   return (
     <div ref={ref} className="pf" style={{
       position: 'absolute', left: 48, top: 96,
       width: 560, padding: '34px 38px 32px',
       borderRadius: 22,
-      background: 'linear-gradient(180deg, rgba(7,13,24,0.62), rgba(7,13,24,0.48))',
-      backdropFilter: 'blur(12px)',
+      // A near-opaque dark panel instead of a live backdrop-blur. A blurred
+      // glass card has to re-sample + re-blur the animated diorama behind it
+      // every frame; over time that shimmers/jitters the card edges and text
+      // (and degrades as the long-running diorama animations accumulate). A
+      // solid translucent fill reads almost identically over the dark scene
+      // but is painted once and never re-rasterizes.
+      background: 'linear-gradient(180deg, rgba(8,14,26,0.93), rgba(8,14,26,0.88))',
       border: '1px solid rgba(255,255,255,0.1)',
       boxShadow: '0 20px 60px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08)',
       opacity: 1, transition: 'opacity .15s linear',
       zIndex: 4, overflow: 'hidden',
     }}>
-      {/* drifting micro snow inside the card — ties it to the diorama */}
-      <div className="pf-snow-layer" />
       {/* top edge highlight */}
       <div style={{
         position: 'absolute', top: 0, left: 24, right: 24, height: 1,
@@ -138,7 +161,9 @@ const HeroText = React.forwardRef(function HeroText({ onScrollToForge }, ref) {
         <span className="pf-pulse" style={{ width: 7, height: 7, borderRadius: '50%', background: '#6bffb0' }} />
         <span>live</span>
         <span style={{ color: 'rgba(167,198,240,0.4)' }}>·</span>
-        <span><b style={{ color: '#fff', fontWeight: 700 }}>4</b> penguins in plaza</span>
+        {plaza > 0
+          ? <span><b style={{ color: '#fff', fontWeight: 700 }}>{plaza}</b> {plaza === 1 ? 'penguin' : 'penguins'} in plaza</span>
+          : <span>plaza is quiet — <b style={{ color: '#fff', fontWeight: 700 }}>be the first</b></span>}
         <span style={{ color: 'rgba(167,198,240,0.4)' }}>·</span>
         <span style={{ color: '#ffb84e' }}>20Hz</span>
       </div>

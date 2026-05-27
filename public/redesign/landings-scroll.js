@@ -169,6 +169,20 @@ const DioramaHero = React.memo(function DioramaHero({
 const HeroText = React.forwardRef(function HeroText({
   onScrollToForge
 }, ref) {
+  // LIVE plaza count — polls GET /api/penguins, counts room === 'plaza'.
+  const [plaza, setPlaza] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const rows = await (await fetch('/api/penguins', { cache: 'no-store' })).json();
+        if (alive) setPlaza(Array.isArray(rows) ? rows.filter(r => r && r.room === 'plaza').length : null);
+      } catch { if (alive) setPlaza(null); }
+    };
+    tick();
+    const id = setInterval(tick, 4000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
   return /*#__PURE__*/React.createElement("div", {
     ref: ref,
     className: "pf",
@@ -179,8 +193,7 @@ const HeroText = React.forwardRef(function HeroText({
       width: 560,
       padding: '34px 38px 32px',
       borderRadius: 22,
-      background: 'linear-gradient(180deg, rgba(7,13,24,0.62), rgba(7,13,24,0.48))',
-      backdropFilter: 'blur(12px)',
+      background: 'linear-gradient(180deg, rgba(8,14,26,0.93), rgba(8,14,26,0.88))',
       border: '1px solid rgba(255,255,255,0.1)',
       boxShadow: '0 20px 60px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08)',
       opacity: 1,
@@ -189,8 +202,6 @@ const HeroText = React.forwardRef(function HeroText({
       overflow: 'hidden'
     }
   }, /*#__PURE__*/React.createElement("div", {
-    className: "pf-snow-layer"
-  }), /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'absolute',
       top: 0,
@@ -225,12 +236,17 @@ const HeroText = React.forwardRef(function HeroText({
     style: {
       color: 'rgba(167,198,240,0.4)'
     }
-  }, "\xB7"), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", {
+  }, "\xB7"), plaza > 0 ? /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", {
     style: {
       color: '#fff',
       fontWeight: 700
     }
-  }, "4"), " penguins in plaza"), /*#__PURE__*/React.createElement("span", {
+  }, plaza), plaza === 1 ? " penguin in plaza" : " penguins in plaza") : /*#__PURE__*/React.createElement("span", null, "plaza is quiet — ", /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: '#fff',
+      fontWeight: 700
+    }
+  }, "be the first")), /*#__PURE__*/React.createElement("span", {
     style: {
       color: 'rgba(167,198,240,0.4)'
     }
