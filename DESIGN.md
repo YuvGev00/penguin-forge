@@ -117,6 +117,30 @@ to one engine.
 compose (the union of their verbs is reachable); on a same-verb collision the
 hand-written file wins, so a file route is never silently overridden.
 
+## 8. The Code Lab grades Python in the browser, not on the server
+
+**Decision:** the Lab's Python puzzles are graded **client-side** — the
+browser runs the player's code with CPython-compiled-to-WebAssembly (Pyodide),
+checks it against the puzzle's test cases, and reports `{kind:'solved', puzzleId}`
+to the server. The server (`ClassRoom` in `game/arcade.js`) only holds the
+puzzle metadata and broadcasts the scoreboard; it never executes Python.
+
+**Why:** running Python on the server would mean shelling out to a `python3`
+binary (a host dependency that breaks on any machine without Python) or
+embedding an interpreter (a heavy dependency). Both violate the project's
+pure-Node, zero-dependency premise. Pyodide keeps the server clean: Python
+lives entirely in the player's own browser tab, sandboxed by the browser, and
+loaded on demand from a CDN only when someone opens the Lab. Everything else in
+the game runs offline; this one feature is the sole exception, and it fails
+gracefully (a "needs a connection" notice) rather than breaking the room.
+
+**Trade-offs:** (1) Grading is trusted — a player could lie about solving, since
+the result comes from their browser. Acceptable: this is a friendly co-op
+classroom, not a proctored exam, and a false "solved" only ticks a scoreboard.
+(2) Pyodide runs on the main thread and can't be force-killed mid-execution, so
+an unbounded loop would freeze that one tab; obvious infinite loops
+(`while True`) are rejected up front, and the limitation is documented.
+
 ## What is deliberately out of scope
 
 - **Live position in the roster** — see §2; the wrong altitude for an admin

@@ -287,7 +287,131 @@ class BookRoom {
 }
 
 
-const GAMES = { draw: DrawGame, duel: DuelGame, book: BookRoom };
+// ---------------- Code Lab (Python puzzles) ----------------
+// A co-op classroom: everyone sees the same puzzle, writes a Python function,
+// and the room shows who's solved it. Grading happens IN THE BROWSER (Pyodide,
+// CPython-in-WASM) — the server never runs Python, so it stays zero-dependency.
+// The client computes pass/fail against `puzzle.tests` and reports back with
+// {kind:'solved', puzzleId}; we trust that (this is a friendly classroom, not a
+// proctored exam) and broadcast the scoreboard. Puzzle `tests` are sent to the
+// client now (the browser needs them to grade).
+const PUZZLES = [
+  {
+    id: 'add',
+    title: 'Sum Two Numbers',
+    prompt: 'Write a function that returns the sum of two numbers a and b.',
+    hint: 'Use the + operator and `return` the result — e.g. `return a + b`.',
+    signature: 'def add(a, b):\n    # your code here\n    pass',
+    tests: [
+      { call: 'add(2, 3)', expect: 5 },
+      { call: 'add(-1, 1)', expect: 0 },
+      { call: 'add(10, 90)', expect: 100 },
+    ],
+  },
+  {
+    id: 'reverse',
+    title: 'Reverse a String',
+    prompt: 'Write a function that returns the reverse of a string s.',
+    hint: 'Python slicing can reverse a sequence: `s[::-1]`.',
+    signature: 'def reverse(s):\n    # your code here\n    pass',
+    tests: [
+      { call: 'reverse("hello")', expect: 'olleh' },
+      { call: 'reverse("abc")', expect: 'cba' },
+      { call: 'reverse("")', expect: '' },
+    ],
+  },
+  {
+    id: 'isEven',
+    title: 'Is It Even?',
+    prompt: 'Write a function that returns True if n is even, False otherwise.',
+    hint: 'The modulo operator gives a remainder: a number is even when '
+      + '`n % 2 == 0`.',
+    signature: 'def is_even(n):\n    # your code here\n    pass',
+    tests: [
+      { call: 'is_even(4)', expect: true },
+      { call: 'is_even(7)', expect: false },
+      { call: 'is_even(0)', expect: true },
+    ],
+  },
+];
+
+class ClassRoom {
+  constructor(emit) {
+    this.emit = emit;
+    this.members = new Map(); // id -> { name, solved:Set<puzzleId> }
+    this.puzzleIdx = 0;
+  }
+  get puzzle() { return PUZZLES[this.puzzleIdx]; }
+  add(id, name) {
+    this.members.set(id, { name, solved: new Set() });
+    this.emit({ t: 'classstate', ...this._state(id), _to: id });
+    this.emit({ t: 'scores', players: this._players() });
+  }
+  remove(id) {
+    this.members.delete(id);
+    this.emit({ t: 'scores', players: this._players() });
+  }
+  // The CLIENT graded the submission (in-browser Pyodide) and reports a solve.
+  // Trust + broadcast — this is a friendly co-op classroom, not a proctored
+  // exam (documented; a client could lie, which only fakes a scoreboard tick).
+  solved(id, puzzleId) {
+    const mem = this.members.get(id);
+    if (!mem) return;
+    if (puzzleId !== this.puzzle.id) return; // stale solve for an old puzzle
+    if (mem.solved.has(puzzleId)) return;     // already credited
+    mem.solved.add(puzzleId);
+    this.emit({ t: 'classmsg', text: `${mem.name} solved it!` });
+    this.emit({ t: 'scores', players: this._players() });
+  }
+  next(id) {
+    // Anti-grief: only someone who SOLVED the current puzzle may advance the
+    // class, so a hostile member can't spam `next` and wipe everyone's progress.
+    const mem = this.members.get(id);
+    if (!mem || !mem.solved.has(this.puzzle.id)) {
+      this.emit({ t: 'classmsg', text: 'Solve this puzzle before moving on.', _to: id });
+      return;
+    }
+    this.puzzleIdx = (this.puzzleIdx + 1) % PUZZLES.length;
+    for (const m of this.members.values()) m.solved = new Set();
+    this.emit({ t: 'classmsg', text: `${mem.name} advanced the class →` });
+    this.emit({ t: 'classstate', ...this._stateAll() });
+    this.emit({ t: 'scores', players: this._players() });
+  }
+  tick() {}
+  destroy() {} // no timers to clear
+  _players() {
+    return [...this.members.values()].map((m) => ({
+      name: m.name, solved: m.solved.has(this.puzzle.id),
+    }));
+  }
+  _state(id) {
+    const mem = this.members.get(id);
+    const p = this.puzzle;
+    return {
+      puzzle: {
+        id: p.id, title: p.title, prompt: p.prompt,
+        signature: p.signature, hint: p.hint, tests: p.tests,
+      },
+      players: this._players(),
+      youSolved: mem ? mem.solved.has(p.id) : false,
+    };
+  }
+  _stateAll() {
+    const p = this.puzzle;
+    return {
+      puzzle: {
+        id: p.id, title: p.title, prompt: p.prompt,
+        signature: p.signature, hint: p.hint, tests: p.tests,
+      },
+      players: this._players(),
+    };
+  }
+  snapshotFor(id) {
+    return { t: 'classstate', ...this._state(id), _to: id };
+  }
+}
+
+const GAMES = { draw: DrawGame, duel: DuelGame, book: BookRoom, class: ClassRoom };
 
 // One Arcade instance manages every cabinet's game.
 class Arcade {
@@ -341,8 +465,10 @@ class Arcade {
     else if (m.kind === 'press') g.press && g.press(id);
     else if (m.kind === 'note') g.note && g.note(id, m);
     else if (m.kind === 'peek') g.peek && g.peek(id, m);
+    else if (m.kind === 'solved') g.solved && g.solved(id, m.puzzleId);
+    else if (m.kind === 'next') g.next && g.next(id);
   }
   tick() { for (const c of this.cabs.values()) c.game.tick(); }
 }
 
-module.exports = { Arcade, DrawGame, DuelGame, BookRoom, WORDS };
+module.exports = { Arcade, DrawGame, DuelGame, BookRoom, ClassRoom, PUZZLES, WORDS };

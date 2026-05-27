@@ -54,7 +54,12 @@ glowing portal marking a doorway or feature in each room:
 - **Town Plaza** — the spawn point and hub.
 - **Cozy Café** — a quiet hangout.
 - **Gothic University** — a great hall branching into two study rooms:
-  - **Lab** — an explorable room.
+  - **Lab** — step onto the **💻 Code Lab** console to solve small Python
+    puzzles; the room shows who's cracked the current one. The code runs as
+    **real Python in your browser** (CPython via Pyodide, WebAssembly) — the
+    server never runs Python, so it stays zero-dependency. Pyodide loads from a
+    CDN on first use; this is the one feature that needs a connection (the rest
+    of the game is fully offline), and the Lab degrades gracefully without it.
   - **Library** — has a **📖 Bookshelf** you can read and leave margin notes in.
 - **Arcade** — two cabinets to play:
   - **🎨 Draw & Guess** — one penguin draws, the others guess.
@@ -231,7 +236,7 @@ penguin-forge/
                          WebSocket, JSON store, Data Explorer, Wire Inspector
   game/
     world.js             the world: rooms, players, the 20 Hz simulation
-    arcade.js            the arcade mini-games (draw, duel, bookshelf)
+    arcade.js            the cabinet games (draw, duel, bookshelf, code lab)
     hub.js               lets the REST API act on the live world
   routes/
     index.js             /        the home page

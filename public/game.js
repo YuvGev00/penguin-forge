@@ -301,10 +301,131 @@ const Game = (() => {
     }
   });
 
-  $('labRunBtn').onclick = () => {
+  // ---- Pyodide grader (CPython in WebAssembly, in THIS browser) ----
+  // The server never runs Python — the user's code is graded entirely
+  // client-side. Pyodide (~10 MB) is fetched from a pinned CDN the first time
+  // the Code Lab is used, then cached by the browser. Everything else in the
+  // game works offline; only this one feature needs a connection on first load.
+  const PYODIDE_VERSION = 'v0.26.4';
+  const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/' + PYODIDE_VERSION + '/full/';
+  let _pyodide = null;     // resolved interpreter
+  let _pyodideLoading = null; // in-flight promise (load once)
+
+  function loadPyodideOnce() {
+    if (_pyodide) return Promise.resolve(_pyodide);
+    if (_pyodideLoading) return _pyodideLoading;
+    _pyodideLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = PYODIDE_URL + 'pyodide.js';
+      s.onload = async () => {
+        try {
+          const py = await window.loadPyodide({ indexURL: PYODIDE_URL });
+          _pyodide = py;
+          resolve(py);
+        } catch (e) { reject(e); }
+      };
+      s.onerror = () => reject(new Error('Could not load Python (Pyodide) — offline?'));
+      document.head.appendChild(s);
+    });
+    return _pyodideLoading;
+  }
+
+  // Reject the obvious tab-freezers up front (Pyodide runs on the main thread
+  // and can't be force-killed mid-execution, unlike the old server judge).
+  const LOOP_BLOCK = [/while\s+True\s*:/, /while\s+1\s*:/, /for\b[^\n]*\bcount\s*\(/];
+  function looksInfinite(code) {
+    return LOOP_BLOCK.some((re) => re.test(code));
+  }
+
+  // Build a Python harness: run the user's function against each {call,expect}
+  // and return one JSON line of {passed,total,detail}. Mirrors the old server
+  // judge's contract so the existing result UI renders unchanged.
+  function buildHarness(code, tests) {
+    const testsJson = JSON.stringify(JSON.stringify(tests));
+    return [
+      'import json, math',
+      '__tests = json.loads(' + testsJson + ')',
+      'def __clean(x):',
+      '    if isinstance(x, bool) or x is None: return x',
+      '    if isinstance(x, float):',
+      '        if not math.isfinite(x): raise ValueError("non-finite float")',
+      '        return x',
+      '    if isinstance(x, int): return x',
+      '    if isinstance(x, str): return x',
+      '    if isinstance(x, (list, tuple)): return [__clean(v) for v in x]',
+      '    if isinstance(x, dict): return {str(k): __clean(v) for k, v in x.items()}',
+      '    raise TypeError("unsupported return type: " + type(x).__name__)',
+      'def __eq(a, b): return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)',
+      '__passed = 0',
+      '__detail = []',
+      'try:',
+      code.split('\n').map((l) => '    ' + l).join('\n'),
+      'except Exception as __e:',
+      '    __detail.append({"call": "<setup>", "ok": False, "err": str(__e)})',
+      '    __out = {"passed": 0, "total": len(__tests), "detail": __detail}',
+      'else:',
+      '    for __t in __tests:',
+      '        try:',
+      '            __got = __clean(eval(__t["call"]))',
+      '            __ok = __eq(__got, __t["expect"])',
+      '            if __ok: __passed += 1',
+      '            __detail.append({"call": __t["call"], "ok": __ok, "got": __got, "expect": __t["expect"]})',
+      '        except Exception as __e:',
+      '            __detail.append({"call": __t["call"], "ok": False, "err": str(__e)})',
+      '    __out = {"passed": __passed, "total": len(__tests), "detail": __detail}',
+      'json.dumps(__out)',
+    ].join('\n');
+  }
+
+  async function gradeWithPyodide(code, tests) {
+    const py = await loadPyodideOnce();
+    const out = await py.runPythonAsync(buildHarness(code, tests));
+    return JSON.parse(out); // {passed,total,detail}
+  }
+
+  function renderLabResult(res, puzzleId) {
+    const el = $('labResults');
+    const lines = (res.detail || []).map((d) => {
+      if (d.ok) return `<div class="pass">✓ ${esc(d.call)}</div>`;
+      const why = d.err ? esc(d.err)
+        : `got ${esc(JSON.stringify(d.got))}, want ${esc(JSON.stringify(d.expect))}`;
+      return `<div class="fail">✗ ${esc(d.call)} — ${why}</div>`;
+    });
+    const ok = res.total > 0 && res.passed === res.total;
+    el.innerHTML = `<b style="color:${ok ? '#6bff9e' : '#ff6b6b'}">` +
+      `${ok ? 'All tests passed!' : `${res.passed}/${res.total} passed`}</b>` + lines.join('');
+    // Tell the server (and so the room) only on a real all-pass.
+    if (ok && puzzleId) send({ kind: 'solved', puzzleId });
+  }
+
+  $('labRunBtn').onclick = async () => {
     if (active !== 'pc') return;
     const code = $('labCode').value;
-    send({ kind: 'submit', code });
+    const puzzleId = labPuzzle && labPuzzle.id;
+    const tests = (labPuzzle && labPuzzle.tests) || [];
+    const res = $('labResults');
+    const btn = $('labRunBtn');
+    if (looksInfinite(code)) {
+      res.innerHTML = '<div class="fail">✗ Infinite loop blocked (this runs in your '
+        + 'browser and can\'t be force-stopped). Remove the unbounded loop.</div>';
+      return;
+    }
+    btn.disabled = true;
+    const wasLabel = btn.textContent;
+    res.innerHTML = '<b style="color:#7fa3d6">' +
+      (_pyodide ? 'Running…' : 'Loading Python (first run, ~once)…') + '</b>';
+    try {
+      const result = await gradeWithPyodide(code, tests);
+      renderLabResult(result, puzzleId);
+    } catch (e) {
+      res.innerHTML = '<div class="fail">✗ ' + esc(String(e && e.message || e)) +
+        '</div><div style="color:#7fa3d6;font-size:.78rem;margin-top:.3rem">' +
+        'The Code Lab needs an internet connection the first time (to load ' +
+        'Python). The rest of the game works offline.</div>';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = wasLabel;
+    }
   };
   $('labNextBtn').onclick = () => {
     if (active !== 'pc') return;
@@ -540,15 +661,9 @@ const Game = (() => {
         d.textContent = ev.text;
         log.appendChild(d);
         log.scrollTop = log.scrollHeight;
-      } else if (ev.t === 'result') {
-        const res = $('labResults');
-        const lines = (ev.detail || []).map((d) => {
-          if (d.ok) return `<div class="pass">✓ ${esc(d.call)}</div>`;
-          const why = d.err ? esc(d.err) : `got ${esc(JSON.stringify(d.got))}, want ${esc(JSON.stringify(d.expect))}`;
-          return `<div class="fail">✗ ${esc(d.call)} — ${why}</div>`;
-        });
-        res.innerHTML = `<b style="color:${ev.ok ? '#6bff9e' : '#ff6b6b'}">${ev.ok ? 'All tests passed!' : `${ev.passed}/${ev.total} passed`}</b>` + lines.join('');
       }
+      // Note: there is no server 'result' event — submissions are graded
+      // in-browser by Pyodide (see gradeWithPyodide / renderLabResult).
     }
   }
 

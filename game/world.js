@@ -66,7 +66,12 @@ const ROOMS = {
       { x: 45, y: 320, w: 120, h: 130, to: 'university', label: 'Hall →', soft: true },
     ],
     spawn: { x: 600, y: 540 },
-    cabinets: [],
+    cabinets: [
+      // Step onto the lab console (right side) to open the Python Code Lab.
+      // Clear of the spawn (center-bottom) and the Hall door (left).
+      { id: 'pc', game: 'class', label: '💻 Code Lab',
+        zone: { x: 840, y: 300, w: 140, h: 140 } },
+    ],
   },
   library: {
     name: 'University — Library',
