@@ -60,7 +60,7 @@ const DioramaHero = React.memo(function DioramaHero({ palette: p }) {
       </defs>
 
       {/* hand-drawn plaza illustration, full-bleed */}
-      <image href="assets/plaza-hero.png" x="0" y="0" width="1440" height="900"
+      <image href="assets/plaza-hero.webp" x="0" y="0" width="1440" height="900"
         preserveAspectRatio="xMidYMid slice" />
 
       {/* penguins standing on the snow around the plaza */}

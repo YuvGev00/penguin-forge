@@ -71,7 +71,7 @@ const DioramaHero = React.memo(function DioramaHero({
     offset: "1",
     stopColor: "rgba(7,13,24,0.18)"
   }))), /*#__PURE__*/React.createElement("image", {
-    href: "assets/plaza-hero.png",
+    href: "assets/plaza-hero.webp",
     x: "0",
     y: "0",
     width: "1440",

@@ -16,13 +16,13 @@ let prev = null, cur = null, prevAt = 0, curAt = 0;
 const anim = new Map(); // id -> { phase, squash, lastX, lastY }
 
 // ---------- room background images ----------
-// Each room is a painted scene in public/bg/<room>.png, drawn to fill the
+// Each room is a painted scene in public/bg/<room>.webp, drawn to fill the
 // 1200x720 canvas. Preloaded once; until an image is ready (or if it fails),
 // we fall back to the room's flat bg colour from the snapshot.
 const ROOM_BG = {};
 ['plaza', 'cafe', 'university', 'lab', 'library', 'arcade'].forEach((room) => {
   const img = new Image();
-  img.src = '/bg/' + room + '.png';
+  img.src = '/bg/' + room + '.webp';
   ROOM_BG[room] = img;
 });
 function paintRoomBg(room) {
