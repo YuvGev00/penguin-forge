@@ -37,7 +37,14 @@ const Game = (() => {
   const bookNotesCache = {}; // key -> [{name,text}]
 
   // ---- Lab state ----
-  let labPuzzle = null; // {title,prompt,signature}
+  // labPuzzle: { id, title, prompt, langs:{<lang>:{signature,hint,tests}}, available:[] }
+  let labPuzzle = null;
+  let labLang = 'python';   // the language the player picked in the picker
+  const LANG_META = {       // display label + editor placeholder per language
+    python:     { label: '🐍 Python',     ph: 'Write Python here. Tab indents 4 spaces.' },
+    javascript: { label: '🟨 JavaScript', ph: 'Write JavaScript here. Tab indents 2 spaces.' },
+  };
+  const labLangDef = () => (labPuzzle && labPuzzle.langs && labPuzzle.langs[labLang]) || null;
 
   function isGameIdle(cabId) {
     if (cabId === 'shelf' || cabId === 'pc') return false; // never show lobby
@@ -228,39 +235,64 @@ const Game = (() => {
   });
 
   // ---- Lab helpers ----
+  // Build the language picker once we know which languages a puzzle offers.
+  function renderLangPicker() {
+    const wrap = $('labLangPicker');
+    if (!wrap) return;
+    const avail = (labPuzzle && labPuzzle.available) || ['python'];
+    if (avail.indexOf(labLang) === -1) labLang = avail[0];
+    wrap.innerHTML = avail.map((lg) => {
+      const m = LANG_META[lg] || { label: lg };
+      const on = lg === labLang ? ' on' : '';
+      return `<button type="button" class="lab-lang-btn${on}" data-lang="${esc(lg)}">${esc(m.label)}</button>`;
+    }).join('');
+    wrap.querySelectorAll('.lab-lang-btn').forEach((b) => {
+      b.onclick = () => {
+        if (b.dataset.lang === labLang) return;
+        labLang = b.dataset.lang;
+        renderLangPicker();
+        renderLabForLang(true); // language switch → reset editor to its skeleton
+        $('labResults').innerHTML = '';
+      };
+    });
+    const meta = LANG_META[labLang] || {};
+    if ($('labLangBadge')) $('labLangBadge').textContent = meta.label || labLang;
+    if ($('labCode')) $('labCode').placeholder = meta.ph || '';
+  }
+
+  // Render the selected language's signature/hint/tests into the editor.
+  // `force` resets the editor to the skeleton (puzzle changed or language
+  // switched); otherwise only resets if the box is empty/untouched skeleton.
+  let _prevSkeleton = null;
+  function renderLabForLang(force) {
+    const def = labLangDef();
+    if (!def) return;
+    $('labPuzzleSig').textContent = def.signature || '';
+    const code = $('labCode').value;
+    if (force || code === '' || code === _prevSkeleton) {
+      $('labCode').value = def.signature || '';
+    }
+    _prevSkeleton = def.signature || '';
+    const hint = def.hint || '';
+    $('labHint').hidden = true;
+    $('labHint').textContent = hint;
+    $('labHintBtn').textContent = '💡 Show hint';
+    $('labHintBtn').hidden = !hint;
+  }
+
   function renderLabState(s) {
     if (!s) return;
-    const prevSig = labPuzzle ? labPuzzle.signature : null;
     const prevTitle = labPuzzle ? labPuzzle.title : null;
     labPuzzle = s.puzzle;
     if (s.puzzle) {
       $('labPuzzleTitle').textContent = s.puzzle.title || '—';
       $('labPuzzlePrompt').textContent = s.puzzle.prompt || '';
-      $('labPuzzleSig').textContent = s.puzzle.signature || '';
-      // The class advanced to a DIFFERENT puzzle: the old solution is
-      // meaningless now, so always reset the editor to the new skeleton.
-      // Within the SAME puzzle (e.g. a scoreboard update re-renders state),
-      // preserve whatever the user has typed unless it's still the
-      // untouched skeleton.
-      const code = $('labCode').value;
       const puzzleChanged = prevTitle !== null && prevTitle !== s.puzzle.title;
-      if (puzzleChanged || code === '' || code === prevSig
-          || code === s.puzzle.signature) {
-        $('labCode').value = s.puzzle.signature || '';
-      }
-      // Hint stays hidden until "Show hint". Re-hide it on a puzzle change
-      // (its text is now stale); leave it alone on same-puzzle re-renders
-      // so a scoreboard update doesn't snap a revealed hint shut.
-      const hint = s.puzzle.hint || '';
       const firstRender = prevTitle === null;
-      if (puzzleChanged || firstRender) {
-        $('labHint').hidden = true;
-        $('labHint').textContent = hint;
-        $('labHintBtn').textContent = '💡 Show hint';
-        $('labHintBtn').hidden = !hint;
-      } else {
-        $('labHint').textContent = hint;
-      }
+      renderLangPicker();
+      // A different puzzle resets the editor; a same-puzzle re-render (e.g. a
+      // scoreboard tick) preserves whatever the user has typed.
+      renderLabForLang(puzzleChanged || firstRender);
     }
     if (s.players) renderLabScores(s.players);
   }
@@ -332,7 +364,11 @@ const Game = (() => {
 
   // Reject the obvious tab-freezers up front (Pyodide runs on the main thread
   // and can't be force-killed mid-execution, unlike the old server judge).
-  const LOOP_BLOCK = [/while\s+True\s*:/, /while\s+1\s*:/, /for\b[^\n]*\bcount\s*\(/];
+  // Covers both Python (while True:) and JS (while(true), for(;;)).
+  const LOOP_BLOCK = [
+    /while\s+True\s*:/, /while\s+1\s*:/,         // python
+    /while\s*\(\s*(true|1)\s*\)/i, /for\s*\(\s*;\s*;\s*\)/, // javascript
+  ];
   function looksInfinite(code) {
     return LOOP_BLOCK.some((re) => re.test(code));
   }
@@ -383,6 +419,42 @@ const Game = (() => {
     return JSON.parse(out); // {passed,total,detail}
   }
 
+  // JavaScript grader — runs entirely in this tab, no download, fully offline.
+  // The user's code defines a function; each test's `call` is evaluated in a
+  // scope where that function is in scope, then deep-compared to `expect`.
+  function deepEq(a, b) {
+    try { return JSON.stringify(a) === JSON.stringify(b); } catch { return a === b; }
+  }
+  async function gradeWithJS(code, tests) {
+    const detail = [];
+    let passed = 0;
+    // Build one function body: the user's code, then return a runner that
+    // evals a given call expression in that scope. `Function` keeps it out of
+    // the page's closure (can't see game internals); it's the user's own tab.
+    let run;
+    try {
+      // eslint-disable-next-line no-new-func
+      run = new Function(code + '\n;return function(__call){ return eval(__call); };')();
+    } catch (e) {
+      return { passed: 0, total: tests.length,
+        detail: [{ call: '<setup>', ok: false, err: String(e && e.message || e) }] };
+    }
+    for (const t of tests) {
+      try {
+        const got = run(t.call);
+        const ok = deepEq(got, t.expect);
+        if (ok) passed++;
+        detail.push({ call: t.call, ok, got, expect: t.expect });
+      } catch (e) {
+        detail.push({ call: t.call, ok: false, err: String(e && e.message || e) });
+      }
+    }
+    return { passed, total: tests.length, detail };
+  }
+
+  // language -> grader. Each takes (code, tests) -> {passed,total,detail}.
+  const GRADERS = { python: gradeWithPyodide, javascript: gradeWithJS };
+
   function renderLabResult(res, puzzleId) {
     const el = $('labResults');
     const lines = (res.detail || []).map((d) => {
@@ -402,7 +474,9 @@ const Game = (() => {
     if (active !== 'pc') return;
     const code = $('labCode').value;
     const puzzleId = labPuzzle && labPuzzle.id;
-    const tests = (labPuzzle && labPuzzle.tests) || [];
+    const def = labLangDef();
+    const tests = (def && def.tests) || [];
+    const grade = GRADERS[labLang] || gradeWithJS;
     const res = $('labResults');
     const btn = $('labRunBtn');
     if (looksInfinite(code)) {
@@ -412,16 +486,19 @@ const Game = (() => {
     }
     btn.disabled = true;
     const wasLabel = btn.textContent;
+    // Only Python needs a one-time download (Pyodide); JS runs instantly.
     res.innerHTML = '<b style="color:#7fa3d6">' +
-      (_pyodide ? 'Running…' : 'Loading Python (first run, ~once)…') + '</b>';
+      (labLang === 'python' && !_pyodide ? 'Loading Python (first run, ~once)…' : 'Running…') + '</b>';
     try {
-      const result = await gradeWithPyodide(code, tests);
+      const result = await grade(code, tests);
       renderLabResult(result, puzzleId);
     } catch (e) {
-      res.innerHTML = '<div class="fail">✗ ' + esc(String(e && e.message || e)) +
-        '</div><div style="color:#7fa3d6;font-size:.78rem;margin-top:.3rem">' +
-        'The Code Lab needs an internet connection the first time (to load ' +
-        'Python). The rest of the game works offline.</div>';
+      const offlineNote = labLang === 'python'
+        ? '<div style="color:#7fa3d6;font-size:.78rem;margin-top:.3rem">'
+          + 'The Python lab needs an internet connection the first time (to load '
+          + 'Python). JavaScript works offline, and so does the rest of the game.</div>'
+        : '';
+      res.innerHTML = '<div class="fail">✗ ' + esc(String(e && e.message || e)) + '</div>' + offlineNote;
     } finally {
       btn.disabled = false;
       btn.textContent = wasLabel;

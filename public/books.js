@@ -233,4 +233,25 @@ window.BOOKS = [
       "Here, we see a lot of the string methods in action. The startswith method is used to find out whether the string starts with the given string. The in operator is used to check if a given string is a part of the string.\n\nThe find method is used to locate the position of the given substring within the string; find returns -1 if it is unsuccessful in finding the substring. The str class also has a neat method to join the items of a sequence with the string acting as a delimiter between each item of the sequence and returns a bigger string generated from this.",
     ],
   },
+  {
+    id: "bytejavascript",
+    title: "A Byte of JavaScript (primer)",
+    author: "penguin-forge — original, CC0",
+    color: "#7a6a1e",
+    // An original, concise companion to the Code Lab's JavaScript track.
+    // Covers exactly what the puzzles need: functions, return, operators,
+    // strings, arrays. Original text (no third-party content).
+    pages: [
+      "A BYTE OF JAVASCRIPT\n\nA short companion to the Code Lab's JavaScript track. JavaScript is\nthe language of the web browser — and, with Node.js, of servers too\n(this whole world runs on it). Unlike the Python track, your\nJavaScript runs instantly, right here in your browser, with nothing\nto download.\n\nThis primer covers just enough to solve the lab puzzles: functions,\nreturn values, operators, strings and arrays.",
+      "FUNCTIONS\n\nA function is a reusable block of code. You define one with the\n`function` keyword, a name, parameters in (), and a body in {}:\n\n    function greet(name) {\n      return 'Hello, ' + name;\n    }\n\nYou call it by name:\n\n    greet('Pingu')   // -> 'Hello, Pingu'\n\nThe lab gives you a function skeleton; you fill in the body so it\nreturns the right answer for each test.",
+      "RETURN\n\n`return` hands a value back to whoever called the function — and\nstops the function there. A function with no `return` gives back\n`undefined`.\n\n    function double(n) {\n      return n * 2;   // the result of double(n)\n    }\n\n    double(21)   // -> 42\n\nFor the puzzles, your job is almost always: compute the answer, then\n`return` it. Forgetting `return` (e.g. just writing `n * 2;`) is the\nmost common reason a test fails.",
+      "VARIABLES\n\nDeclare a variable with `let` (can change) or `const` (cannot):\n\n    let count = 0;\n    count = count + 1;   // ok\n\n    const name = 'Pingu';\n    // name = 'Skipper';  // error: const can't be reassigned\n\nPrefer `const` unless you know you'll reassign. Statements usually\nend with a semicolon `;`.",
+      "OPERATORS & NUMBERS\n\nThe arithmetic operators are familiar:\n\n    +  -  *  /        // add, subtract, multiply, divide\n    %                 // remainder (modulo): 7 % 2 === 1\n    **                // power: 2 ** 3 === 8\n\nComparisons return a boolean (true / false):\n\n    <  >  <=  >=\n    ===   // equal (value AND type) — prefer this\n    !==   // not equal\n\nUse === (strict equality), not ==. === won't surprise you with type\ncoercion: 0 === false is false, but 0 == false is true.",
+      "BOOLEANS & is-even\n\nAn expression like n % 2 === 0 evaluates to a boolean directly, so\nyou can return it as-is:\n\n    function isEven(n) {\n      return n % 2 === 0;\n    }\n\nNo if needed — the comparison already produces true or false.",
+      "STRINGS\n\nStrings hold text, in single or double quotes (or backticks):\n\n    const s = 'hello';\n    s.length          // 5\n    s[0]              // 'h'  (index from 0)\n    s + ' world'      // 'hello world'  (concatenation)\n    `hi ${s}`         // 'hi hello'  (template literal)\n\nStrings are immutable — methods return a NEW string rather than\nchanging the original.",
+      "ARRAYS (and reversing a string)\n\nAn array is an ordered list:\n\n    const a = [3, 1, 2];\n    a.length            // 3\n    a.reverse()         // [2, 1, 3]  (in place)\n    a.join('-')         // '2-1-3'\n\nTo reverse a string, turn it into an array of characters, reverse it,\nand join it back:\n\n    function reverse(s) {\n      return s.split('').reverse().join('');\n    }\n\n    reverse('hello')   // -> 'olleh'",
+      "PUTTING IT TOGETHER\n\nThe three Code Lab puzzles in JavaScript:\n\n    function add(a, b) {\n      return a + b;\n    }\n\n    function reverse(s) {\n      return s.split('').reverse().join('');\n    }\n\n    function isEven(n) {\n      return n % 2 === 0;\n    }\n\nWrite your solution in the lab, press Run, and the tests grade it\ninstantly in your browser. Switch the language picker to Python to\nsolve the same problems there.",
+      "A NOTE ON HOW IT RUNS\n\nWhen you press Run on the JavaScript track, your function is defined\nand each test call is evaluated — entirely inside your own browser\ntab. Nothing is sent to the server to be executed; the server only\nhears \"solved!\" once every test passes.\n\nThis is the same idea the whole project is built on: do as much as\npossible from scratch, with no dependencies. JavaScript needs no\nruntime to download at all — it's already here.",
+    ],
+  },
 ];

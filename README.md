@@ -54,13 +54,17 @@ glowing portal marking a doorway or feature in each room:
 - **Town Plaza** — the spawn point and hub.
 - **Cozy Café** — a quiet hangout.
 - **Gothic University** — a great hall branching into two study rooms:
-  - **Lab** — step onto the **💻 Code Lab** console to solve small Python
-    puzzles; the room shows who's cracked the current one. The code runs as
-    **real Python in your browser** (CPython via Pyodide, WebAssembly) — the
-    server never runs Python, so it stays zero-dependency. Pyodide loads from a
-    CDN on first use; this is the one feature that needs a connection (the rest
-    of the game is fully offline), and the Lab degrades gracefully without it.
-  - **Library** — has a **📖 Bookshelf** you can read and leave margin notes in.
+  - **Lab** — step onto the **💻 Code Lab** console to solve small coding
+    puzzles; the room shows who's cracked the current one. Pick your language
+    with the picker: **JavaScript** runs instantly in your browser (no download,
+    fully offline), or **Python** runs as real CPython via Pyodide (WebAssembly,
+    loaded from a CDN on first use). Either way the **server never runs the
+    code** — it's graded in your browser, so the server stays zero-dependency.
+    The Python track is the one feature that needs a connection on first load;
+    JavaScript and the rest of the game are fully offline.
+  - **Library** — has a **📖 Bookshelf** you can read and leave margin notes in,
+    including a *Byte of Python* and *Byte of JavaScript* primer that pair with
+    the Code Lab's two language tracks.
 - **Arcade** — two cabinets to play:
   - **🎨 Draw & Guess** — one penguin draws, the others guess.
   - **⚡ Reaction Duel** — fastest reflex wins, best of three.

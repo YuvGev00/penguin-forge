@@ -404,6 +404,15 @@
     .lab-lang { font-size: .74rem; font-weight: 800; color: #ffe08a;
       background: rgba(255,200,60,0.14); border: 1px solid rgba(255,200,60,0.4);
       padding: .2rem .6rem; border-radius: 999px; white-space: nowrap; }
+    .lab-lang-picker { display: flex; gap: .4rem; }
+    .lab-lang-btn { font: inherit; font-size: .76rem; font-weight: 700;
+      color: #b8c6e0; background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.14); border-radius: 999px;
+      padding: .22rem .7rem; cursor: pointer; white-space: nowrap;
+      transition: background .15s, color .15s, border-color .15s; }
+    .lab-lang-btn:hover { background: rgba(255,255,255,0.1); }
+    .lab-lang-btn.on { color: #1a2740; background: linear-gradient(135deg,#ffd966,#ffb02e);
+      border-color: transparent; }
     .lab-puzzle-title { font-size: 1.05rem; font-weight: 900; color: #6bffb0; }
     .lab-puzzle-prompt { font-size: .88rem; color: #b0c8b0; line-height: 1.5; }
     .lab-hint-btn { font: inherit; font-size: .78rem; font-weight: 700;
@@ -552,14 +561,16 @@
         <div id="labUI" class="cab-body" hidden>
           <div class="lab-titlebar">
             <span class="lab-puzzle-title" id="labPuzzleTitle">—</span>
-            <span class="lab-lang">🐍 Python</span>
+            <span class="lab-lang" id="labLangBadge">🐍 Python</span>
           </div>
+          <!-- language picker: JS (offline) or Python (Pyodide); JS injects buttons -->
+          <div class="lab-lang-picker" id="labLangPicker"></div>
           <div class="lab-puzzle-prompt" id="labPuzzlePrompt"></div>
           <button class="lab-hint-btn" id="labHintBtn">💡 Show hint</button>
           <div class="lab-hint" id="labHint" hidden></div>
           <div class="lab-sig" id="labPuzzleSig"></div>
           <textarea id="labCode" rows="6" spellcheck="false"
-            placeholder="Write Python here. Tab indents 4 spaces."></textarea>
+            placeholder="Write code here."></textarea>
           <button class="lab-run-btn" id="labRunBtn">▶ Run / Submit</button>
           <div class="lab-results" id="labResults"></div>
           <div class="lab-bottom">
@@ -611,7 +622,7 @@
 
   <script src="/penguin.js?v=8"></script>
   <script src="/books.js?v=8"></script>
-  <script src="/game.js?v=9"></script>
+  <script src="/game.js?v=10"></script>
   <script src="/app.js?v=12"></script>
 </body>
 </html>

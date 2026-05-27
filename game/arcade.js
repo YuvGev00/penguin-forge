@@ -295,45 +295,94 @@ class BookRoom {
 // {kind:'solved', puzzleId}; we trust that (this is a friendly classroom, not a
 // proctored exam) and broadcast the scoreboard. Puzzle `tests` are sent to the
 // client now (the browser needs them to grade).
+// Each puzzle is the SAME problem expressed per language. Shared id/title/
+// prompt; a `langs` map holds the per-language signature, tests, and hint.
+// A test's `expect` is JSON-comparable and language-agnostic (5, "olleh",
+// true); only the `call` syntax + signature differ. The client picks a
+// language, shows that language's signature/tests, and grades in it; the
+// scoreboard is shared (puzzleId is language-agnostic).
 const PUZZLES = [
   {
     id: 'add',
     title: 'Sum Two Numbers',
     prompt: 'Write a function that returns the sum of two numbers a and b.',
-    hint: 'Use the + operator and `return` the result — e.g. `return a + b`.',
-    signature: 'def add(a, b):\n    # your code here\n    pass',
-    tests: [
-      { call: 'add(2, 3)', expect: 5 },
-      { call: 'add(-1, 1)', expect: 0 },
-      { call: 'add(10, 90)', expect: 100 },
-    ],
+    langs: {
+      python: {
+        signature: 'def add(a, b):\n    # your code here\n    pass',
+        hint: 'Use the + operator and `return` the result — e.g. `return a + b`.',
+        tests: [
+          { call: 'add(2, 3)', expect: 5 },
+          { call: 'add(-1, 1)', expect: 0 },
+          { call: 'add(10, 90)', expect: 100 },
+        ],
+      },
+      javascript: {
+        signature: 'function add(a, b) {\n  // your code here\n}',
+        hint: 'Use the + operator and `return` the result — e.g. `return a + b;`.',
+        tests: [
+          { call: 'add(2, 3)', expect: 5 },
+          { call: 'add(-1, 1)', expect: 0 },
+          { call: 'add(10, 90)', expect: 100 },
+        ],
+      },
+    },
   },
   {
     id: 'reverse',
     title: 'Reverse a String',
     prompt: 'Write a function that returns the reverse of a string s.',
-    hint: 'Python slicing can reverse a sequence: `s[::-1]`.',
-    signature: 'def reverse(s):\n    # your code here\n    pass',
-    tests: [
-      { call: 'reverse("hello")', expect: 'olleh' },
-      { call: 'reverse("abc")', expect: 'cba' },
-      { call: 'reverse("")', expect: '' },
-    ],
+    langs: {
+      python: {
+        signature: 'def reverse(s):\n    # your code here\n    pass',
+        hint: 'Python slicing can reverse a sequence: `s[::-1]`.',
+        tests: [
+          { call: 'reverse("hello")', expect: 'olleh' },
+          { call: 'reverse("abc")', expect: 'cba' },
+          { call: 'reverse("")', expect: '' },
+        ],
+      },
+      javascript: {
+        signature: 'function reverse(s) {\n  // your code here\n}',
+        hint: 'Split into characters, reverse the array, join back: '
+          + "`s.split('').reverse().join('')`.",
+        tests: [
+          { call: 'reverse("hello")', expect: 'olleh' },
+          { call: 'reverse("abc")', expect: 'cba' },
+          { call: 'reverse("")', expect: '' },
+        ],
+      },
+    },
   },
   {
     id: 'isEven',
     title: 'Is It Even?',
-    prompt: 'Write a function that returns True if n is even, False otherwise.',
-    hint: 'The modulo operator gives a remainder: a number is even when '
-      + '`n % 2 == 0`.',
-    signature: 'def is_even(n):\n    # your code here\n    pass',
-    tests: [
-      { call: 'is_even(4)', expect: true },
-      { call: 'is_even(7)', expect: false },
-      { call: 'is_even(0)', expect: true },
-    ],
+    prompt: 'Write a function that returns true if n is even, false otherwise.',
+    langs: {
+      python: {
+        signature: 'def is_even(n):\n    # your code here\n    pass',
+        hint: 'The modulo operator gives a remainder: a number is even when '
+          + '`n % 2 == 0`.',
+        tests: [
+          { call: 'is_even(4)', expect: true },
+          { call: 'is_even(7)', expect: false },
+          { call: 'is_even(0)', expect: true },
+        ],
+      },
+      javascript: {
+        signature: 'function isEven(n) {\n  // your code here\n}',
+        hint: 'The remainder operator: a number is even when `n % 2 === 0`.',
+        tests: [
+          { call: 'isEven(4)', expect: true },
+          { call: 'isEven(7)', expect: false },
+          { call: 'isEven(0)', expect: true },
+        ],
+      },
+    },
   },
 ];
+
+// Languages offered in the Code Lab (order = picker order).
+const LAB_LANGS = ['python', 'javascript'];
 
 class ClassRoom {
   constructor(emit) {
@@ -384,27 +433,23 @@ class ClassRoom {
       name: m.name, solved: m.solved.has(this.puzzle.id),
     }));
   }
+  // The public puzzle shape sent to clients: shared id/title/prompt + the
+  // per-language map (signature/hint/tests for each) + the languages offered,
+  // so the client can render a picker and grade in the chosen one.
+  _pubPuzzle() {
+    const p = this.puzzle;
+    return { id: p.id, title: p.title, prompt: p.prompt, langs: p.langs, available: LAB_LANGS };
+  }
   _state(id) {
     const mem = this.members.get(id);
-    const p = this.puzzle;
     return {
-      puzzle: {
-        id: p.id, title: p.title, prompt: p.prompt,
-        signature: p.signature, hint: p.hint, tests: p.tests,
-      },
+      puzzle: this._pubPuzzle(),
       players: this._players(),
-      youSolved: mem ? mem.solved.has(p.id) : false,
+      youSolved: mem ? mem.solved.has(this.puzzle.id) : false,
     };
   }
   _stateAll() {
-    const p = this.puzzle;
-    return {
-      puzzle: {
-        id: p.id, title: p.title, prompt: p.prompt,
-        signature: p.signature, hint: p.hint, tests: p.tests,
-      },
-      players: this._players(),
-    };
+    return { puzzle: this._pubPuzzle(), players: this._players() };
   }
   snapshotFor(id) {
     return { t: 'classstate', ...this._state(id), _to: id };
@@ -471,4 +516,4 @@ class Arcade {
   tick() { for (const c of this.cabs.values()) c.game.tick(); }
 }
 
-module.exports = { Arcade, DrawGame, DuelGame, BookRoom, ClassRoom, PUZZLES, WORDS };
+module.exports = { Arcade, DrawGame, DuelGame, BookRoom, ClassRoom, PUZZLES, LAB_LANGS, WORDS };

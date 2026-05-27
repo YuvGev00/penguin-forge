@@ -117,13 +117,24 @@ to one engine.
 compose (the union of their verbs is reachable); on a same-verb collision the
 hand-written file wins, so a file route is never silently overridden.
 
-## 8. The Code Lab grades Python in the browser, not on the server
+## 8. The Code Lab grades code in the browser, not on the server
 
-**Decision:** the Lab's Python puzzles are graded **client-side** — the
-browser runs the player's code with CPython-compiled-to-WebAssembly (Pyodide),
-checks it against the puzzle's test cases, and reports `{kind:'solved', puzzleId}`
-to the server. The server (`ClassRoom` in `game/arcade.js`) only holds the
-puzzle metadata and broadcasts the scoreboard; it never executes Python.
+**Decision:** the Lab's coding puzzles are graded **client-side**. A puzzle is
+one problem expressed per language (a `langs` map of signature + tests); the
+player picks a language and the browser runs their code, checks it against the
+puzzle's test cases, and reports `{kind:'solved', puzzleId}` to the server. The
+server (`ClassRoom` in `game/arcade.js`) only holds puzzle metadata and
+broadcasts the shared scoreboard; it never executes user code.
+
+**Two languages, two graders, one shared puzzle.** A grader registry in the
+client maps a language to a grading function: **JavaScript** runs natively in
+the tab (a `Function()` scope — no download, fully offline); **Python** runs
+real CPython via Pyodide (WebAssembly, loaded from a CDN on first use). Both
+return the same `{passed, total, detail}` shape, so the result UI and the
+"X solved it" broadcast are language-agnostic. The puzzle and scoreboard are
+shared across the room — everyone solves the *same problem*, each in their
+chosen language. Adding a language is mostly: a `langs` entry per puzzle, a
+grader in the registry, and a matching Library primer.
 
 **Why:** running Python on the server would mean shelling out to a `python3`
 binary (a host dependency that breaks on any machine without Python) or
