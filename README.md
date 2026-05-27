@@ -100,10 +100,44 @@ touching the terminal.
 
 ---
 
+## Under the hood — built from scratch on `net`
+
+Everything below the framework's friendly surface is hand-written on Node's raw
+`net` (TCP) module. No `http`, no `http2`, no Express, no `ws` — the only
+built-ins used are `net`, `fs`, `path`, `crypto` (for the WebSocket handshake
+SHA-1) and `events`.
+
+- **Manual HTTP/1.1 parsing** (`src/http-parser.js`). TCP delivers bytes in
+  arbitrary chunks, so the parser reassembles a request across `data` events,
+  finds the `\r\n\r\n` header terminator, splits the **request line** (method /
+  target / version), the **headers**, and the **body**, and decodes the path +
+  query string by hand. It also hardens the wire: rejects conflicting/duplicate
+  `Content-Length`, `Transfer-Encoding: chunked`, and a missing/duplicate `Host`
+  (request-smuggling guards), and caps body size.
+- **Hand-built HTTP/1.1 responses** (`src/response.js`). The status line,
+  headers, and body are assembled and written to the socket directly — with a
+  full status-code table, HEAD/204/304 body suppression, keep-alive framing, and
+  CRLF-injection guards on every header.
+- **A hand-built routing engine** (`src/fs-router.js`) that matches paths and
+  HTTP methods. `fileToPattern()` compiles each path into a **regex** with
+  `:param` → `([^/]+)` capture groups (and `[...rest]` catch-alls); `match()`
+  runs those regexes against each request path, extracts and URL-decodes the
+  params, orders routes by specificity (literal segments beat params), and
+  dispatches by method (emitting `405 + Allow` when the path exists but the verb
+  doesn't).
+
+  **The filesystem and `app.get()` are just two ways to *register* routes into
+  that one hand-built matcher — neither replaces it.** A `routes/` file's
+  location supplies the path; an `app.get(path, …)` call supplies it imperatively.
+  Both compile to the same regex table and run through the same `match()`.
+- **From-scratch WebSockets** (`src/websocket.js`) — RFC 6455 handshake, frame
+  decode/encode, ping/pong — on the same raw socket after a `101` upgrade.
+
 ## How it's built
 
-**Routing is the filesystem.** There is no route registration — a file under
-`routes/` *is* an endpoint. `routes/index.js` → `/`, `routes/play.js` → `/play`,
+**Routing is the filesystem.** A file under `routes/` *is* an endpoint (it
+registers into the matcher above — there's no `app.get()` boilerplate to write).
+`routes/index.js` → `/`, `routes/play.js` → `/play`,
 `routes/api/penguins/[id].js` → `/api/penguins/:id`. Each file reads like the
 HTTP it serves, via a tiny tagged-template DSL:
 
@@ -136,6 +170,37 @@ this way show up in `/_routes` and the `/forge` route table tagged `code` (vs
 `file` for routes declared by a `routes/` file) — `server.js` registers
 `GET /api/ping` this way as a live demo. `curl localhost:4300/api/ping` →
 `{"pong":true}`.
+
+### The two required features, demonstrated
+
+**1. Static file serving** (like `express.static()`). Pass `staticDir` and any
+path with no matching route is served from that folder, with the correct MIME
+type and directory-traversal protection (a `../` escape returns 404/403):
+
+```js
+forge({ staticDir: 'public' }).listen(4300);
+//  GET /app.js        → public/app.js        (application/javascript)
+//  GET /bg/plaza.png  → public/bg/plaza.png  (image/png)
+//  GET /../etc/passwd → 404  (traversal blocked)
+```
+
+This is exactly how penguin-forge serves its own browser client — every page,
+script, font, and PNG under `public/` is delivered by this static handler.
+
+**2. Route handlers** (like `app.get()` / `app.post()`). Either declare them as
+`routes/` files (the DSL, shown above) or imperatively:
+
+```js
+forge({ staticDir: 'public' })
+  .get('/api/users/:id', ({ params }) => json({ id: params.id }))   // :params
+  .post('/api/users', ({ body }) => created(body))                  // parsed body
+  .listen(4300);
+//  GET  /api/users/42   → {"id":"42"}
+//  POST /api/users      → 201 + the JSON body echoed back
+```
+
+`req`-style data is on the handler `ctx`: `method`, `path`, `query`, `params`,
+`headers`, and a lazily-parsed `body` (JSON / urlencoded auto-detected).
 
 **Real WebSockets, from scratch.** `routes/world.js` is a `` ws`` `` route at
 `/world`. It performs the RFC 6455 handshake, decodes/encodes frames, and runs
@@ -175,7 +240,11 @@ penguin-forge/
     world.js             /world   the WebSocket + game loop
     api/penguins/        the roster + spawn/rename/kick REST API
   public/                the browser client (pages, game renderer, art)
-  test/  smoke.js        end-to-end tests over real sockets
+  test/
+    framework.test.js    framework-capability suite (HTTP parse, routing,
+                         static, smuggling, keep-alive, HEAD, WS, dual-API…)
+                         run against isolated fixtures under test/fixtures/
+    smoke.js             end-to-end game tests over real sockets
 ```
 
 ---
@@ -183,11 +252,25 @@ penguin-forge/
 ## Tests
 
 ```bash
-npm test
+npm test              # runs BOTH suites below (≈129 assertions)
+npm run test:framework  # framework only
+npm run test:game       # game E2E only
 ```
 
-The suite drives the server over raw sockets and checks the full path end to
-end: the WebSocket handshake, a penguin joining and landing in the roster, chat
-broadcasting between two clients, disconnect cleanup, and the complete REST
-cycle — spawning a penguin, renaming it, and kicking a connected player (right
-down to the "kicked" message arriving on their socket).
+Two suites, both driving the server over raw `net` sockets (no test framework,
+no HTTP client — same spirit as the project):
+
+- **`test/framework.test.js`** (~113 assertions) exercises the framework itself
+  against isolated fixtures: manual HTTP parsing (incl. split-TCP requests and
+  smuggling rejections), routing + `:params` + `405`, static serving +
+  directory-traversal/symlink blocking, keep-alive, pipelining, HEAD, the
+  Data Explorer / Wire Inspector / route builder, the from-scratch WebSocket
+  handshake + echo, and the imperative `app.get()/app.post()` API.
+- **`test/smoke.js`** (16 assertions) is the end-to-end game path: the WebSocket
+  handshake, a penguin joining and landing in the roster, chat broadcasting
+  between two clients, disconnect cleanup, and the full REST cycle — spawn,
+  rename, and kick a connected player (down to the "kicked" message arriving on
+  their socket).
+
+Both use a dedicated isolated DB (`FS_FORGE_DB`) so they never touch the demo
+`data.json`.
