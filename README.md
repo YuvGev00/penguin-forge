@@ -62,9 +62,8 @@ glowing portal marking a doorway or feature in each room:
     code** — it's graded in your browser, so the server stays zero-dependency.
     The Python track is the one feature that needs a connection on first load;
     JavaScript and the rest of the game are fully offline.
-  - **Library** — has a **📖 Bookshelf** you can read and leave margin notes in,
-    including two full programming books — *A Byte of Python* and *Eloquent
-    JavaScript* — that pair with the Code Lab's two language tracks.
+  - **Library** — has a **📖 Bookshelf** of short public-domain and original
+    texts you can read and leave shared margin notes in.
 - **Arcade** — two cabinets to play:
   - **🎨 Draw & Guess** — one penguin draws, the others guess.
   - **⚡ Reaction Duel** — fastest reflex wins, best of three.
